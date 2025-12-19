@@ -31,7 +31,7 @@ def main() -> None:
     base_dir = Path(__file__).resolve().parents[1]  # project root
 
     # Use the Phase 1 output as input to Phase 2
-    input_path = base_dir / "Steve" / "processed_weekly_cashflow.csv"
+    input_path = base_dir / "data" / "model_dataset" / "processed_weekly_cashflow.csv"
     output_dir = base_dir / "data" / "processed"
     output_path = output_dir / "weekly_features.csv"
 
