@@ -95,22 +95,29 @@ def train_validation_split(df: pd.DataFrame, validation_weeks: int = VALIDATION_
 # EVALUATION METRICS
 # --------------------------------------------------------------------------------------
 
+def calculate_wape(actual: np.ndarray, predicted: np.ndarray) -> float:
+    actual_sum = np.sum(np.abs(actual))
+    if actual_sum == 0:
+        return None
+    return np.sum(np.abs(actual - predicted)) / actual_sum * 100
+
 def calculate_metrics(actual: np.ndarray, predicted: np.ndarray) -> Dict[str, float]:
     rmse = np.sqrt(mean_squared_error(actual, predicted))
     mae = mean_absolute_error(actual, predicted)
     threshold = max(np.median(np.abs(actual)) * 0.01, 1e-6)
     mask = np.abs(actual) > threshold
     mape = np.mean(np.abs((actual[mask] - predicted[mask]) / actual[mask])) * 100 if mask.sum() > 0 else None
+    wape = calculate_wape(actual, predicted)
     return {
         "RMSE": round(rmse, 2),
         "MAE": round(mae, 2),
-        "MAPE_percent": round(mape, 2) if mape is not None else None
+        "MAPE_percent": round(mape, 2) if mape is not None else None,
+        "WAPE_percent": round(wape, 2) if wape is not None else None
     }
 
 # --------------------------------------------------------------------------------------
 # ARIMA MODEL CREATION
 # --------------------------------------------------------------------------------------
-
 def fit_arima_model(endog: pd.Series, exog: pd.DataFrame = None, order: Tuple[int, int, int] = ARIMA_ORDER):
     try:
         model = ARIMA(endog=endog, exog=exog, order=order)
@@ -226,6 +233,7 @@ def run_arima_pipeline():
             "RMSE": metrics["RMSE"],
             "MAE": metrics["MAE"],
             "MAPE_percent": metrics["MAPE_percent"],
+            "WAPE_percent": metrics["WAPE_percent"],
             "Train_Weeks": len(result["train_df"]),
             "Validation_Weeks": len(result["val_df"])
         })
@@ -260,17 +268,20 @@ def run_arima_pipeline():
     if not metrics_df.empty:
         avg_rmse = metrics_df["RMSE"].mean()
         avg_mape = metrics_df["MAPE_percent"].mean()
+        avg_wape = metrics_df["WAPE_percent"].mean()
 
         # Format table nicely
         metrics_table = metrics_df.copy()
         metrics_table["RMSE_USD"] = metrics_table["RMSE"].apply(lambda x: f"${x:,.2f}")
         metrics_table["MAE_USD"] = metrics_table["MAE"].apply(lambda x: f"${x:,.2f}")
-        metrics_table = metrics_table[["Country", "RMSE_USD", "MAE_USD", "MAPE_percent", "Train_Weeks", "Validation_Weeks"]]
+        metrics_table["WAPE_percent"] = metrics_table["WAPE_percent"].round(2)
+        metrics_table = metrics_table[["Country", "RMSE_USD", "MAE_USD", "MAPE_percent", "WAPE_percent", "Train_Weeks", "Validation_Weeks"]]
 
         logger.info("\nOverall Model Performance:")
         logger.info("\n" + metrics_table.to_string(index=False))
         logger.info(f"\nAverage RMSE across all countries: ${avg_rmse:,.2f}")
         logger.info(f"Average MAPE across all countries: {avg_mape:.1f}%")
+        logger.info(f"Average WAPE across all countries: {avg_wape:.2f}%")
     
     logger.info("\n" + "="*70)
     logger.info("[OK] ARIMA pipeline complete!")
