@@ -159,6 +159,12 @@ def generate_future_forecast(df: pd.DataFrame, country: str, periods: int = FORE
 # --------------------------------------------------------------------------------------
 
 def run_arima_pipeline():
+    """
+    Main ARIMA pipeline execution function.
+    
+    Returns:
+        Tuple of (results_dict, forecast_df, metrics_df)
+    """
     logger.info("="*70)
     logger.info("  ARIMA CASH FLOW FORECASTING")
     logger.info("="*70)
@@ -174,16 +180,23 @@ def run_arima_pipeline():
     for country in countries:
         logger.info(f"\nProcessing {country}...")
         country_df = df[df["Country_Name"] == country].sort_values("Week_Ending_Date").reset_index(drop=True)
+        
+        # Data validation
         if len(country_df) < MIN_DATA_POINTS:
-            logger.warning(f"  Skipping {country}: only {len(country_df)} data points")
+            logger.warning(f"  Skipping {country}: only {len(country_df)} data points (minimum: {MIN_DATA_POINTS})")
             continue
+        
         if len(country_df) < VALIDATION_WEEKS + MIN_DATA_POINTS:
-            logger.warning(f"  Skipping {country}: insufficient data for validation")
+            logger.warning(f"  Skipping {country}: insufficient data for {VALIDATION_WEEKS}-week validation")
             continue
+        
+        # Backtest
         result = backtest_arima(country_df, country)
         if result is None:
             continue
+            
         all_results[country] = result
+        
         metrics = result["metrics"]
         metrics_list.append({
             "Country": country,
@@ -193,18 +206,22 @@ def run_arima_pipeline():
             "Train_Weeks": len(result["train_df"]),
             "Validation_Weeks": len(result["val_df"])
         })
+        
+        # Generate future forecasts
         forecast_1m = generate_future_forecast(country_df, country, periods=FORECAST_1M_WEEKS)
         if not forecast_1m.empty:
             forecast_1m["Horizon"] = "1_month"
             all_forecasts.append(forecast_1m)
+        
         forecast_6m = generate_future_forecast(country_df, country, periods=FORECAST_6M_WEEKS)
         if not forecast_6m.empty:
             forecast_6m["Horizon"] = "6_month"
             all_forecasts.append(forecast_6m)
     
+    # Save results
     metrics_df = pd.DataFrame(metrics_list)
     metrics_df.to_csv(OUTPUT_DIR / "arima_backtest_metrics.csv", index=False)
-    logger.info(f"Saved metrics to {OUTPUT_DIR / 'arima_backtest_metrics.csv'}")
+    logger.info(f"\nSaved metrics to {OUTPUT_DIR / 'arima_backtest_metrics.csv'}")
     
     if all_forecasts:
         forecast_df = pd.concat(all_forecasts, ignore_index=True)
@@ -214,10 +231,28 @@ def run_arima_pipeline():
         forecast_df = pd.DataFrame()
         logger.warning("No forecasts generated")
     
+    # -----------------------------
+    # Calculate and log averages
+    # -----------------------------
+    if not metrics_df.empty:
+        avg_rmse = metrics_df["RMSE"].mean()
+        avg_mape = metrics_df["MAPE_percent"].mean()
+
+        # Format table nicely
+        metrics_table = metrics_df.copy()
+        metrics_table["RMSE_USD"] = metrics_table["RMSE"].apply(lambda x: f"${x:,.2f}")
+        metrics_table["MAE_USD"] = metrics_table["MAE"].apply(lambda x: f"${x:,.2f}")
+        metrics_table = metrics_table[["Country", "RMSE_USD", "MAE_USD", "MAPE_percent", "Train_Weeks", "Validation_Weeks"]]
+
+        logger.info("\nOverall Model Performance:")
+        logger.info("\n" + metrics_table.to_string(index=False))
+        logger.info(f"\nAverage RMSE across all countries: ${avg_rmse:,.2f}")
+        logger.info(f"Average MAPE across all countries: {avg_mape:.1f}%")
+    
     logger.info("\n" + "="*70)
     logger.info("[OK] ARIMA pipeline complete!")
     logger.info("="*70)
-    logger.info("\n" + metrics_df.to_string(index=False))
     
     return all_results, forecast_df, metrics_df
+
 
