@@ -27,9 +27,27 @@ warnings.filterwarnings("ignore")
 # --------------------------------------------------------------------------------------
 # CONFIGURATION CONSTANTS
 # --------------------------------------------------------------------------------------
-DATA_FILE = Path(r"C:\Users\Owner\Documents\GitHub\Datathon_ThreeGuys\data\model_dataset\weekly_features.csv")
+# Resolve base directory: main/jiakang/arima_forecasting.py → Datathon_ThreeGuys/
+BASE_DIR = Path(__file__).resolve().parents[2]
+
+# Try multiple possible paths for the data file
+POSSIBLE_DATA_PATHS = [
+    BASE_DIR / "data" / "model_dataset" / "weekly_features.csv",
+    BASE_DIR / "data" / "processed" / "weekly_features.csv",
+    BASE_DIR / "Steve" / "processed_weekly_cashflow.csv"
+]
+
+# Find the first existing data file
+DATA_FILE = None
+for path in POSSIBLE_DATA_PATHS:
+    if path.exists():
+        DATA_FILE = path
+        break
+
 OUTPUT_DIR = Path(__file__).parent / "arima_results"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+
 
 # Model configuration
 ARIMA_ORDER = (1, 0, 0)  # (p, d, q)
@@ -51,8 +69,13 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------------------------------------------
 
 def load_weekly_data() -> pd.DataFrame:
-    if not DATA_FILE.exists():
-        raise FileNotFoundError(f"Weekly data not found at {DATA_FILE}")
+    """Load weekly features data from CSV file."""
+    if DATA_FILE is None or not DATA_FILE.exists():
+        error_msg = "Weekly data file not found. Checked paths:\n"
+        for path in POSSIBLE_DATA_PATHS:
+            error_msg += f"  - {path}\n"
+        raise FileNotFoundError(error_msg)
+    
     logger.info(f"Loading data from {DATA_FILE}")
     df = pd.read_csv(DATA_FILE, parse_dates=["Week_Ending_Date"])
     logger.info(f"Loaded {len(df)} rows, {len(df['Country_Name'].unique())} countries")
