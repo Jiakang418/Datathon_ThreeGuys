@@ -31,6 +31,7 @@ warnings.filterwarnings("ignore")
 # --------------------------------------------------------------------------------------
 
 BASE_DIR = Path(__file__).resolve().parent.parent  # Datathon_ThreeGuys root
+STEVE_DIR = BASE_DIR / "Steve"
 OUTPUT_DIR = Path(__file__).resolve().parent / "prophet_results"
 
 WEEKLY_DATA_FILE = BASE_DIR / "data" / "model_dataset" / "weekly_features.csv"
@@ -41,7 +42,7 @@ WEEKLY_DATA_FILE = BASE_DIR / "data" / "model_dataset" / "weekly_features.csv"
 # --------------------------------------------------------------------------------------
 
 def load_weekly_data() -> pd.DataFrame:
-    """Load the weekly features data from Phase 2 (weekly_features.csv)."""
+    """Load the weekly cashflow data prepared by Steve in Phase 1."""
     if not WEEKLY_DATA_FILE.exists():
         raise FileNotFoundError(f"Weekly data not found at {WEEKLY_DATA_FILE}")
     
@@ -383,10 +384,8 @@ def run_prophet_pipeline():
     print("\nOverall Model Performance:")
     print(metrics_df.to_string(index=False))
     
-    avg_rmse = metrics_df["RMSE_USD"].mean()
     avg_mape = metrics_df["MAPE_percent"].mean()
-    print(f"\nAverage RMSE across all countries: ${avg_rmse:,.2f}")
-    print(f"Average MAPE across all countries: {avg_mape:.1f}%")
+    print(f"\nAverage MAPE across all countries: {avg_mape:.1f}%")
     
     return all_backtest_results, forecast_df, metrics_df
 
