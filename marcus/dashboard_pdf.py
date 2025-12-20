@@ -3,15 +3,15 @@ Professional PDF Dashboard Generator
 =====================================
 AstraZeneca Cash Flow Challenge - Visual Storyboard
 
-Creates a 5-page professional PDF dashboard with:
+Creates a comprehensive 5-page professional PDF dashboard with:
 - Page 1: Executive Summary & KPIs
-- Page 2: Cash Flow Trends & Category Analysis
-- Page 3: Prophet Forecast Results
-- Page 4: Model Validation & Accuracy
-- Page 5: Insights & Recommendations
+- Page 2: Cash Flow Trends & Patterns
+- Page 3: Model Comparison & Performance
+- Page 4: ARIMA Forecasts with Summary Tables
+- Page 5: Anomaly Detection & Recommendations
 
-Author: Marcus (Data Engineer)
-Date: 2025-12-19
+Author: Three Guys Team
+Date: 2025-12-20
 """
 
 import warnings
@@ -35,32 +35,23 @@ MARCUS_DIR = Path(__file__).resolve().parent
 DATA_DIR = BASE_DIR / "data" / "model_dataset"
 RAW_DIR = BASE_DIR / "Raw_Dataset"
 OUTPUT_DIR = MARCUS_DIR / "dashboard_output"
+OUTPUTS_DIR = BASE_DIR / "outputs"
+ARIMA_DIR = BASE_DIR / "main" / "jiakang"
 
-# AstraZeneca Brand Colors
-AZ_COLORS = {
-    "purple": "#830051",       # Primary brand
-    "dark_purple": "#5C0039",  # Darker shade
-    "blue": "#00A0DF",         # Secondary
-    "light_blue": "#68D2DF",   # Accent
-    "green": "#00843D",        # Positive/Inflow
-    "red": "#E40046",          # Negative/Outflow
-    "orange": "#FF6B35",       # Warning
-    "gray": "#6E6E6E",         # Neutral
-    "light_gray": "#E8E8E8",   # Background
-    "white": "#FFFFFF",
-    "black": "#1A1A1A",
+# Layout - more generous margins
+ML, MR = 0.07, 0.93
+CW = MR - ML  # 0.86
+
+# Colors
+C = {
+    "purple": "#830051", "blue": "#00A0DF", "green": "#00843D",
+    "red": "#E40046", "orange": "#FF6B35", "gold": "#F0B323",
+    "gray": "#6E6E6E", "light": "#F5F5F5", "white": "#FFFFFF", "black": "#1A1A1A"
 }
 
-# Country colors for consistency
-COUNTRY_COLORS = {
-    "ID": "#830051",
-    "KR": "#00A0DF", 
-    "MY": "#68D2DF",
-    "PH": "#00843D",
-    "SS": "#E40046",
-    "TH": "#FF6B35",
-    "TW": "#6E6E6E",
-    "VN": "#5C0039",
+CC = {
+    "ID": "#830051", "KR": "#00A0DF", "MY": "#68D2DF", "PH": "#00843D",
+    "SS": "#E40046", "TH": "#FF6B35", "TW": "#6E6E6E", "VN": "#5C0039"
 }
 
 
@@ -69,205 +60,175 @@ COUNTRY_COLORS = {
 # --------------------------------------------------------------------------------------
 
 def load_all_data():
-    """Load all required datasets for the dashboard."""
+    """Load all trained model outputs."""
     data = {}
     
-    # Weekly cash flow data
-    weekly_file = DATA_DIR / "processed_weekly_cashflow.csv"
-    if weekly_file.exists():
-        data["weekly"] = pd.read_csv(weekly_file, parse_dates=["Week_Ending_Date"])
+    files = {
+        "weekly": (DATA_DIR / "processed_weekly_cashflow.csv", ["Week_Ending_Date"]),
+        "arima_metrics": (OUTPUTS_DIR / "hybrid_arima_backtest_metrics.csv", None),
+        "arima_forecast": (OUTPUTS_DIR / "hybrid_arima_future_forecasts.csv", ["Week_Ending_Date"]),
+        "arima_comparison": (OUTPUTS_DIR / "hybrid_arima_actual_vs_predicted.csv", ["Week_Ending_Date"]),
+        "arima_summary": (ARIMA_DIR / "arima_best_model_summary.csv", None),
+        "prophet_metrics": (OUTPUTS_DIR / "hybrid_prophet_backtest_metrics.csv", None),
+        "naive_metrics": (OUTPUTS_DIR / "hybrid_naive_backtest_metrics.csv", None),
+        "structural_anomalies": (OUTPUTS_DIR / "anomalies_structural_level.csv", ["Week_Ending_Date"]),
+        "transaction_anomalies": (OUTPUTS_DIR / "anomalies_transaction_level.csv", None),
+    }
     
-    # Prophet results
-    prophet_forecast = MARCUS_DIR / "prophet_results" / "prophet_future_forecasts.csv"
-    prophet_metrics = MARCUS_DIR / "prophet_results" / "prophet_backtest_metrics.csv"
-    prophet_comparison = MARCUS_DIR / "prophet_results" / "prophet_actual_vs_predicted.csv"
-    
-    if prophet_forecast.exists():
-        data["prophet_forecast"] = pd.read_csv(prophet_forecast, parse_dates=["Week_Ending_Date"])
-    if prophet_metrics.exists():
-        data["prophet_metrics"] = pd.read_csv(prophet_metrics)
-    if prophet_comparison.exists():
-        data["prophet_comparison"] = pd.read_csv(prophet_comparison, parse_dates=["Week_Ending_Date"])
-    
-    # Naive results for comparison
-    naive_metrics = MARCUS_DIR / "naive_results" / "naive_backtest_metrics.csv"
-    if naive_metrics.exists():
-        data["naive_metrics"] = pd.read_csv(naive_metrics)
-    
-    # Cash balance data
-    balance_file = RAW_DIR / "Datathon Dataset - Data - Cash Balance.csv"
-    if balance_file.exists():
-        data["cash_balance"] = pd.read_csv(balance_file)
-    
-    # Raw transaction data for category analysis
-    main_file = RAW_DIR / "Datathon Dataset - Data - Main.csv"
-    if main_file.exists():
-        data["transactions"] = pd.read_csv(main_file, low_memory=False)
+    for name, (path, dates) in files.items():
+        if path.exists():
+            data[name] = pd.read_csv(path, parse_dates=dates) if dates else pd.read_csv(path)
+            print(f"  [OK] {name}: {len(data[name]):,} records")
     
     return data
 
 
-# --------------------------------------------------------------------------------------
-# HELPER FUNCTIONS
-# --------------------------------------------------------------------------------------
-
-def format_currency(value, decimals=1):
-    """Format number as currency string."""
-    if abs(value) >= 1_000_000:
-        return f"${value/1_000_000:.{decimals}f}M"
-    elif abs(value) >= 1_000:
-        return f"${value/1_000:.{decimals}f}K"
-    else:
-        return f"${value:.0f}"
+def fmt(v, d=1):
+    """Format currency."""
+    if abs(v) >= 1e6:
+        return f"${v/1e6:.{d}f}M"
+    if abs(v) >= 1e3:
+        return f"${v/1e3:.{d}f}K"
+    return f"${v:.0f}"
 
 
-def add_header(ax, title, subtitle=None):
-    """Add a styled header to a subplot."""
-    ax.set_facecolor(AZ_COLORS["white"])
-    ax.text(0.5, 0.7, title, transform=ax.transAxes, fontsize=16, 
-            fontweight="bold", color=AZ_COLORS["purple"], ha="center", va="center")
-    if subtitle:
-        ax.text(0.5, 0.3, subtitle, transform=ax.transAxes, fontsize=10,
-                color=AZ_COLORS["gray"], ha="center", va="center")
-    ax.axis("off")
-
-
-def create_kpi_card(ax, title, value, subtitle=None, color=None, icon_text=None):
-    """Create a KPI card visualization."""
-    if color is None:
-        color = AZ_COLORS["purple"]
-    
-    ax.set_facecolor(AZ_COLORS["light_gray"])
-    
-    # Add colored left border effect
-    rect = mpatches.Rectangle((0, 0), 0.02, 1, transform=ax.transAxes, 
-                               color=color, clip_on=False)
-    ax.add_patch(rect)
-    
-    # Title
-    ax.text(0.5, 0.85, title, transform=ax.transAxes, fontsize=9,
-            color=AZ_COLORS["gray"], ha="center", va="center", fontweight="medium")
-    
-    # Value
-    ax.text(0.5, 0.5, value, transform=ax.transAxes, fontsize=20,
-            color=color, ha="center", va="center", fontweight="bold")
-    
-    # Subtitle
-    if subtitle:
-        ax.text(0.5, 0.15, subtitle, transform=ax.transAxes, fontsize=8,
-                color=AZ_COLORS["gray"], ha="center", va="center")
-    
-    ax.axis("off")
-    
-    # Add border
-    for spine in ax.spines.values():
-        spine.set_visible(True)
-        spine.set_color(AZ_COLORS["light_gray"])
+def header(fig, title, sub, pg):
+    """Add page header/footer."""
+    fig.text(0.5, 0.96, title, fontsize=16, fontweight="bold", color=C["purple"], ha="center")
+    fig.text(0.5, 0.92, sub, fontsize=10, color=C["gray"], ha="center")
+    fig.add_artist(plt.Line2D([ML, MR], [0.89, 0.89], transform=fig.transFigure, color=C["purple"], lw=2))
+    fig.text(ML, 0.02, "Three Guys Team | AstraZeneca Datathon 2025", fontsize=8, color=C["gray"])
+    fig.text(MR, 0.02, f"Page {pg}/5", fontsize=8, color=C["gray"], ha="right")
 
 
 # --------------------------------------------------------------------------------------
 # PAGE 1: EXECUTIVE SUMMARY
 # --------------------------------------------------------------------------------------
 
-def create_page1_executive_summary(pdf, data):
-    """Create Page 1: Executive Summary with KPIs."""
-    fig = plt.figure(figsize=(11.69, 8.27))  # A4 landscape - consistent size
-    fig.patch.set_facecolor(AZ_COLORS["white"])
+def page1(pdf, data):
+    """Executive Summary."""
+    fig = plt.figure(figsize=(11.69, 8.27))
+    fig.patch.set_facecolor(C["white"])
     
-    # Title header
-    fig.text(0.5, 0.95, "ASTRAZENECA CASH FLOW DASHBOARD", fontsize=22, 
-             fontweight="bold", color=AZ_COLORS["purple"], ha="center")
-    fig.text(0.5, 0.91, "Weekly Cash Flow Analysis & Forecasting | Prophet Model Baseline", 
-             fontsize=11, color=AZ_COLORS["gray"], ha="center")
-    fig.text(0.5, 0.88, f"Report Generated: {datetime.now().strftime('%B %d, %Y')}", 
-             fontsize=9, color=AZ_COLORS["gray"], ha="center")
+    # Header
+    fig.text(0.5, 0.96, "ASTRAZENECA CASH FLOW FORECASTING", fontsize=20, fontweight="bold", 
+             color=C["purple"], ha="center")
+    fig.text(0.5, 0.92, f"Intelligent Cash Flow Prediction | ARIMA Model | {datetime.now().strftime('%B %d, %Y')}", 
+             fontsize=10, color=C["gray"], ha="center")
+    fig.add_artist(plt.Line2D([ML, MR], [0.89, 0.89], transform=fig.transFigure, color=C["purple"], lw=3))
     
-    # Divider line
-    line = plt.Line2D([0.05, 0.95], [0.85, 0.85], transform=fig.transFigure, 
-                      color=AZ_COLORS["purple"], linewidth=2)
-    fig.add_artist(line)
+    # Get metrics
+    w = data.get("weekly", pd.DataFrame())
+    a = data.get("arima_metrics", pd.DataFrame())
+    sa = data.get("structural_anomalies", pd.DataFrame())
+    ta = data.get("transaction_anomalies", pd.DataFrame())
     
-    # Calculate KPIs from data
-    weekly_df = data.get("weekly", pd.DataFrame())
+    n_countries = w["Country_Name"].nunique() if not w.empty else 0
+    n_weeks = w["Week_Ending_Date"].nunique() if not w.empty else 0
+    total_cf = w["Net_Cash_Flow"].sum() if not w.empty else 0
+    avg_mape = a["MAPE_percent"].mean() if not a.empty else 0
+    best = a.loc[a["MAPE_percent"].idxmin()] if not a.empty else None
+    n_struct = (sa["Anomaly_Flag"] == -1).sum() if not sa.empty else 0
+    n_txn = len(ta) if not ta.empty else 0
     
-    if not weekly_df.empty:
-        total_inflow = weekly_df[weekly_df["Net_Cash_Flow"] > 0]["Net_Cash_Flow"].sum()
-        total_outflow = abs(weekly_df[weekly_df["Net_Cash_Flow"] < 0]["Net_Cash_Flow"].sum())
-        net_cash = weekly_df["Net_Cash_Flow"].sum()
-        num_countries = weekly_df["Country_Name"].nunique()
-        num_weeks = weekly_df["Week_Ending_Date"].nunique()
-        avg_weekly = weekly_df.groupby("Week_Ending_Date")["Net_Cash_Flow"].sum().mean()
-    else:
-        total_inflow = total_outflow = net_cash = avg_weekly = 0
-        num_countries = num_weeks = 0
-    
-    # KPI Cards Row 1
-    kpi_positions = [
-        (0.08, 0.65, 0.18, 0.15),
-        (0.30, 0.65, 0.18, 0.15),
-        (0.52, 0.65, 0.18, 0.15),
-        (0.74, 0.65, 0.18, 0.15),
-    ]
-    
+    # KPI Cards Row (3 cards)
     kpis = [
-        ("COUNTRIES", str(num_countries), "Active Entities", AZ_COLORS["blue"]),
-        ("DATA PERIOD", f"{num_weeks} Weeks", "Jan - Nov 2025", AZ_COLORS["purple"]),
-        ("NET CASH FLOW", format_currency(net_cash), "Total USD", AZ_COLORS["red"] if net_cash < 0 else AZ_COLORS["green"]),
-        ("AVG WEEKLY", format_currency(avg_weekly), "Per Week", AZ_COLORS["gray"]),
+        ("COUNTRIES", str(n_countries), "Entities Analyzed", C["blue"]),
+        ("DATA PERIOD", f"{n_weeks} Weeks", "Jan - Nov 2025", C["purple"]),
+        ("NET CASH FLOW", fmt(total_cf), "Total (All Countries)", C["red"]),
     ]
     
-    for pos, (title, value, subtitle, color) in zip(kpi_positions, kpis):
-        ax = fig.add_axes(pos)
-        create_kpi_card(ax, title, value, subtitle, color)
+    card_w = 0.26
+    gap = (CW - 3 * card_w) / 2
     
-    # Main chart: Net Cash Flow Trend
-    ax_main = fig.add_axes([0.08, 0.12, 0.55, 0.45])
+    for i, (title, val, sub, color) in enumerate(kpis):
+        x = ML + i * (card_w + gap)
+        ax = fig.add_axes([x, 0.72, card_w, 0.14])
+        ax.set_facecolor(C["light"])
+        ax.add_patch(mpatches.Rectangle((0, 0), 0.02, 1, transform=ax.transAxes, color=color))
+        ax.text(0.5, 0.75, title, transform=ax.transAxes, fontsize=10, color=C["gray"], 
+                ha="center", fontweight="bold")
+        ax.text(0.5, 0.42, val, transform=ax.transAxes, fontsize=22, color=color, 
+                ha="center", fontweight="bold")
+        ax.text(0.5, 0.12, sub, transform=ax.transAxes, fontsize=9, color=C["gray"], ha="center")
+        ax.axis("off")
     
-    if not weekly_df.empty:
-        weekly_totals = weekly_df.groupby("Week_Ending_Date")["Net_Cash_Flow"].sum().reset_index()
-        weekly_totals = weekly_totals.sort_values("Week_Ending_Date")
-        
-        colors = [AZ_COLORS["green"] if v >= 0 else AZ_COLORS["red"] 
-                  for v in weekly_totals["Net_Cash_Flow"]]
-        
-        ax_main.bar(range(len(weekly_totals)), weekly_totals["Net_Cash_Flow"], 
-                   color=colors, alpha=0.8, width=0.8)
-        ax_main.axhline(y=0, color=AZ_COLORS["gray"], linewidth=1, linestyle="-")
-        
-        # Trend line
-        z = np.polyfit(range(len(weekly_totals)), weekly_totals["Net_Cash_Flow"], 1)
-        p = np.poly1d(z)
-        ax_main.plot(range(len(weekly_totals)), p(range(len(weekly_totals))), 
-                    color=AZ_COLORS["purple"], linewidth=2, linestyle="--", label="Trend")
-        
-        ax_main.set_xlabel("Week", fontsize=10, color=AZ_COLORS["gray"])
-        ax_main.set_ylabel("Net Cash Flow (USD)", fontsize=10, color=AZ_COLORS["gray"])
-        ax_main.set_title("Weekly Net Cash Flow Trend (All Countries)", fontsize=12, 
-                         fontweight="bold", color=AZ_COLORS["black"], pad=10)
-        ax_main.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format_currency(x, 0)))
+    # Best Model Card
+    ax_best = fig.add_axes([ML, 0.56, CW, 0.12])
+    ax_best.set_facecolor("#E8F5E9")
+    ax_best.add_patch(mpatches.Rectangle((0, 0), 0.008, 1, transform=ax_best.transAxes, color=C["green"]))
+    ax_best.text(0.02, 0.5, "BEST MODEL: ARIMA", transform=ax_best.transAxes, fontsize=16, 
+                 color=C["green"], va="center", fontweight="bold")
+    if best is not None:
+        ax_best.text(0.35, 0.65, f"Avg MAPE: {avg_mape:.1f}%", transform=ax_best.transAxes, 
+                     fontsize=11, color=C["black"])
+        ax_best.text(0.35, 0.30, f"Best: {best['Country']} ({best['MAPE_percent']:.1f}%)", 
+                     transform=ax_best.transAxes, fontsize=11, color=C["black"])
+        ax_best.text(0.65, 0.65, f"Structural Anomalies: {n_struct}", 
+                     transform=ax_best.transAxes, fontsize=11, color=C["black"])
+        ax_best.text(0.65, 0.30, f"Transaction Anomalies: {n_txn:,}", 
+                     transform=ax_best.transAxes, fontsize=11, color=C["black"])
+    ax_best.axis("off")
+    for s in ax_best.spines.values():
+        s.set_visible(True)
+        s.set_color(C["green"])
+        s.set_linewidth(2)
+    
+    # Main Chart (left)
+    ax_main = fig.add_axes([ML, 0.10, 0.50, 0.40])
+    if not w.empty:
+        totals = w.groupby("Week_Ending_Date")["Net_Cash_Flow"].sum().sort_index()
+        colors = [C["green"] if v >= 0 else C["red"] for v in totals.values]
+        ax_main.bar(range(len(totals)), totals.values, color=colors, alpha=0.8)
+        ax_main.axhline(y=0, color=C["gray"], lw=1)
+        z = np.polyfit(range(len(totals)), totals.values, 1)
+        ax_main.plot(range(len(totals)), np.poly1d(z)(range(len(totals))), 
+                    color=C["purple"], lw=2, ls="--", label="Trend")
+        ax_main.set_title("Weekly Net Cash Flow Trend", fontsize=11, fontweight="bold", pad=8)
+        ax_main.set_xlabel("Week", fontsize=9)
+        ax_main.set_ylabel("USD", fontsize=9)
+        ax_main.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: fmt(x, 0)))
         ax_main.grid(True, alpha=0.3, axis="y")
-        ax_main.legend(loc="upper right", fontsize=8)
+        ax_main.legend(fontsize=9)
+        ax_main.tick_params(labelsize=8)
     
-    # Side panel: Cash Flow by Country
-    ax_side = fig.add_axes([0.68, 0.12, 0.27, 0.45])
+    # Summary Panel (right)
+    ax_sum = fig.add_axes([0.60, 0.10, 0.33, 0.40])
+    ax_sum.set_facecolor(C["light"])
+    ax_sum.axis("off")
     
-    if not weekly_df.empty:
-        country_totals = weekly_df.groupby("Country_Name")["Net_Cash_Flow"].sum().sort_values()
-        colors = [COUNTRY_COLORS.get(c, AZ_COLORS["gray"]) for c in country_totals.index]
-        
-        bars = ax_side.barh(country_totals.index, country_totals.values, color=colors, alpha=0.85)
-        ax_side.axvline(x=0, color=AZ_COLORS["gray"], linewidth=1)
-        
-        ax_side.set_title("Net Cash Flow by Country", fontsize=11, fontweight="bold", 
-                         color=AZ_COLORS["black"], pad=10)
-        ax_side.set_xlabel("USD", fontsize=9, color=AZ_COLORS["gray"])
-        ax_side.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format_currency(x, 0)))
-        ax_side.grid(True, alpha=0.3, axis="x")
+    summary = f"""PROJECT SUMMARY
+========================
+
+DATA SCOPE
+  Weeks: {n_weeks}
+  Countries: {n_countries}
+  Transactions: 84,528
+
+MODELS EVALUATED
+  - ARIMA (Winner)
+  - Prophet
+  - Naive Baseline
+
+ANALYSIS
+  - Time Series Forecasting
+  - Anomaly Detection
+  - Model Backtesting
+
+OUTPUTS
+  - 1-Month Forecasts
+  - 6-Month Projections
+  - Risk Alerts"""
     
-    # Footer
-    fig.text(0.05, 0.02, "Data Source: AstraZeneca Datathon Dataset", 
-             fontsize=8, color=AZ_COLORS["gray"])
-    fig.text(0.95, 0.02, "Page 1 of 5", fontsize=8, color=AZ_COLORS["gray"], ha="right")
+    ax_sum.text(0.08, 0.94, summary, transform=ax_sum.transAxes, fontsize=9, 
+                va="top", fontfamily="monospace", color=C["black"], linespacing=1.3)
+    for s in ax_sum.spines.values():
+        s.set_visible(True)
+        s.set_color(C["purple"])
+        s.set_linewidth(2)
+    
+    fig.text(ML, 0.02, "Three Guys Team | AstraZeneca Datathon 2025", fontsize=8, color=C["gray"])
+    fig.text(MR, 0.02, "Page 1/5", fontsize=8, color=C["gray"], ha="right")
     
     pdf.savefig(fig)
     plt.close(fig)
@@ -275,582 +236,495 @@ def create_page1_executive_summary(pdf, data):
 
 
 # --------------------------------------------------------------------------------------
-# PAGE 2: CASH FLOW TRENDS & CATEGORY ANALYSIS
+# PAGE 2: CASH FLOW TRENDS
 # --------------------------------------------------------------------------------------
 
-def create_page2_trends_analysis(pdf, data):
-    """Create Page 2: Cash Flow Trends & Category Analysis."""
-    fig = plt.figure(figsize=(11.69, 8.27))  # A4 landscape
-    fig.patch.set_facecolor(AZ_COLORS["white"])
+def page2(pdf, data):
+    """Cash Flow Trends."""
+    fig = plt.figure(figsize=(11.69, 8.27))
+    fig.patch.set_facecolor(C["white"])
+    header(fig, "CASH FLOW TRENDS & PATTERNS", "Historical analysis across 8 countries and 44 weeks", 2)
     
-    # Header
-    fig.text(0.5, 0.95, "CASH FLOW TRENDS & CATEGORY ANALYSIS", fontsize=18,
-             fontweight="bold", color=AZ_COLORS["purple"], ha="center")
-    fig.text(0.5, 0.91, "Historical patterns and breakdown by operating categories",
-             fontsize=10, color=AZ_COLORS["gray"], ha="center")
+    w = data.get("weekly", pd.DataFrame())
+    hw = (CW - 0.06) / 2  # half width with gap
     
-    line = plt.Line2D([0.05, 0.95], [0.88, 0.88], transform=fig.transFigure,
-                      color=AZ_COLORS["purple"], linewidth=2)
-    fig.add_artist(line)
-    
-    weekly_df = data.get("weekly", pd.DataFrame())
-    transactions_df = data.get("transactions", pd.DataFrame())
-    
-    # Chart 1: Time series by country (top left) - REDUCED SIZE
-    ax1 = fig.add_axes([0.08, 0.56, 0.40, 0.28])
-    
-    if not weekly_df.empty:
-        for country in weekly_df["Country_Name"].unique():
-            country_data = weekly_df[weekly_df["Country_Name"] == country].sort_values("Week_Ending_Date")
-            ax1.plot(country_data["Week_Ending_Date"], country_data["Net_Cash_Flow"],
-                    label=country, color=COUNTRY_COLORS.get(country, AZ_COLORS["gray"]),
-                    linewidth=1.2, alpha=0.8)
-        
-        ax1.axhline(y=0, color=AZ_COLORS["gray"], linewidth=0.8, linestyle="--")
-        ax1.set_title("Weekly Cash Flow by Country", fontsize=10, fontweight="bold", pad=5)
-        ax1.set_xlabel("Date", fontsize=8)
-        ax1.set_ylabel("Net Cash Flow (USD)", fontsize=8)
-        ax1.legend(loc="upper right", fontsize=6, ncol=2)
+    # Chart 1: By Country (top left)
+    ax1 = fig.add_axes([ML, 0.52, hw, 0.32])
+    if not w.empty:
+        for c in w["Country_Name"].unique():
+            d = w[w["Country_Name"] == c].sort_values("Week_Ending_Date")
+            ax1.plot(d["Week_Ending_Date"], d["Net_Cash_Flow"], label=c, 
+                    color=CC.get(c, C["gray"]), lw=1.5, alpha=0.85)
+        ax1.axhline(y=0, color=C["gray"], lw=1, ls="--")
+        ax1.set_title("Weekly Cash Flow by Country", fontsize=11, fontweight="bold", pad=6)
+        ax1.set_xlabel("Date", fontsize=9)
+        ax1.set_ylabel("Net Cash Flow (USD)", fontsize=9)
+        ax1.legend(loc="upper right", fontsize=7, ncol=2)
         ax1.grid(True, alpha=0.3)
-        ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format_currency(x, 0)))
-        ax1.tick_params(axis='both', labelsize=7)
-        # Reduce number of x-axis labels
-        ax1.xaxis.set_major_locator(plt.MaxNLocator(6))
-        plt.setp(ax1.xaxis.get_majorticklabels(), rotation=30, ha="right", fontsize=6)
+        ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: fmt(x, 0)))
+        ax1.tick_params(labelsize=8)
+        plt.setp(ax1.xaxis.get_majorticklabels(), rotation=25, ha="right")
     
-    # Chart 2: Operating vs Financing (top right) - REDUCED SIZE
-    ax2 = fig.add_axes([0.55, 0.56, 0.40, 0.28])
-    
-    if not weekly_df.empty:
-        weekly_totals = weekly_df.groupby("Week_Ending_Date").agg({
-            "Operating_Cash_Flow": "sum",
+    # Chart 2: Operating vs Financing (top right)
+    ax2 = fig.add_axes([ML + hw + 0.06, 0.52, hw, 0.32])
+    if not w.empty:
+        t = w.groupby("Week_Ending_Date").agg({
+            "Operating_Cash_Flow": "sum", 
             "Financing_Cash_Flow": "sum"
-        }).reset_index().sort_values("Week_Ending_Date")
-        
-        ax2.fill_between(range(len(weekly_totals)), weekly_totals["Operating_Cash_Flow"],
-                        alpha=0.6, color=AZ_COLORS["blue"], label="Operating")
-        ax2.fill_between(range(len(weekly_totals)), weekly_totals["Financing_Cash_Flow"],
-                        alpha=0.6, color=AZ_COLORS["orange"], label="Financing")
-        ax2.axhline(y=0, color=AZ_COLORS["gray"], linewidth=0.8)
-        
-        ax2.set_title("Operating vs Financing Cash Flow", fontsize=10, fontweight="bold", pad=5)
-        ax2.set_xlabel("Week", fontsize=8)
-        ax2.set_ylabel("USD", fontsize=8)
-        ax2.legend(loc="upper right", fontsize=7)
+        }).sort_index()
+        ax2.fill_between(range(len(t)), t["Operating_Cash_Flow"], alpha=0.7, 
+                        color=C["blue"], label="Operating")
+        ax2.fill_between(range(len(t)), t["Financing_Cash_Flow"], alpha=0.7, 
+                        color=C["orange"], label="Financing")
+        ax2.axhline(y=0, color=C["gray"], lw=1)
+        ax2.set_title("Operating vs Financing Cash Flow", fontsize=11, fontweight="bold", pad=6)
+        ax2.set_xlabel("Week", fontsize=9)
+        ax2.set_ylabel("USD", fontsize=9)
+        ax2.legend(fontsize=9)
         ax2.grid(True, alpha=0.3)
-        ax2.tick_params(axis='both', labelsize=7)
-        ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format_currency(x, 0)))
+        ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: fmt(x, 0)))
+        ax2.tick_params(labelsize=8)
     
-    # Chart 3: Category breakdown (bottom left) - Donut chart - ADJUSTED
-    ax3 = fig.add_axes([0.12, 0.08, 0.32, 0.38])
+    # Chart 3: Country Ranking (bottom left)
+    ax3 = fig.add_axes([ML, 0.10, hw, 0.34])
+    if not w.empty:
+        totals = w.groupby("Country_Name")["Net_Cash_Flow"].sum().sort_values()
+        colors = [CC.get(c, C["gray"]) for c in totals.index]
+        bars = ax3.barh(totals.index, totals.values, color=colors, alpha=0.85)
+        ax3.axvline(x=0, color=C["gray"], lw=1)
+        for bar, v in zip(bars, totals.values):
+            offset = abs(totals.values).max() * 0.02
+            x_pos = v + offset if v >= 0 else v - offset
+            ax3.text(x_pos, bar.get_y() + bar.get_height()/2, fmt(v), 
+                    ha="left" if v >= 0 else "right", va="center", fontsize=8, fontweight="bold")
+        ax3.set_title("Total Net Cash Flow by Country", fontsize=11, fontweight="bold", pad=6)
+        ax3.set_xlabel("USD", fontsize=9)
+        ax3.xaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: fmt(x, 0)))
+        ax3.grid(True, alpha=0.3, axis="x")
+        ax3.tick_params(labelsize=9)
     
-    if not transactions_df.empty and "Category" in transactions_df.columns:
-        # Ensure Amount in USD is numeric
-        transactions_df["Amount in USD"] = pd.to_numeric(transactions_df["Amount in USD"], errors="coerce").fillna(0)
-        category_totals = transactions_df.groupby("Category")["Amount in USD"].sum().abs()
-        category_totals = category_totals.sort_values(ascending=False).head(8)
-        
-        colors = [AZ_COLORS["purple"], AZ_COLORS["blue"], AZ_COLORS["light_blue"],
-                 AZ_COLORS["green"], AZ_COLORS["red"], AZ_COLORS["orange"],
-                 AZ_COLORS["gray"], "#9B59B6"]
-        
-        wedges, texts, autotexts = ax3.pie(category_totals.values, labels=None,
-                                           autopct=lambda pct: f'{pct:.1f}%' if pct > 5 else '',
-                                           colors=colors[:len(category_totals)],
-                                           wedgeprops=dict(width=0.5, edgecolor='white'),
-                                           pctdistance=0.78,
-                                           textprops={'fontsize': 7})
-        
-        ax3.set_title("Cash Flow by Category (Top 8)", fontsize=10, fontweight="bold", pad=5)
-        
-        # Legend - moved to the left side
-        ax3.legend(wedges, [f"{cat[:12]}..." if len(cat) > 12 else cat 
-                           for cat in category_totals.index],
-                  loc="center left", bbox_to_anchor=(-0.45, 0.5), fontsize=6)
-    
-    # Chart 4: Monthly pattern (bottom right) - ADJUSTED
-    ax4 = fig.add_axes([0.55, 0.08, 0.40, 0.38])
-    
-    if not weekly_df.empty:
-        weekly_df["Month"] = weekly_df["Week_Ending_Date"].dt.month_name().str[:3]
-        monthly = weekly_df.groupby("Month")["Net_Cash_Flow"].sum()
-        month_order = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov"]
-        monthly = monthly.reindex([m for m in month_order if m in monthly.index])
-        
-        colors = [AZ_COLORS["green"] if v >= 0 else AZ_COLORS["red"] for v in monthly.values]
-        ax4.bar(monthly.index, monthly.values, color=colors, alpha=0.8, edgecolor="white")
-        ax4.axhline(y=0, color=AZ_COLORS["gray"], linewidth=0.8)
-        
-        ax4.set_title("Monthly Net Cash Flow Pattern", fontsize=10, fontweight="bold", pad=5)
-        ax4.set_xlabel("Month", fontsize=8)
-        ax4.set_ylabel("USD", fontsize=8)
+    # Chart 4: Monthly Pattern (bottom right)
+    ax4 = fig.add_axes([ML + hw + 0.06, 0.10, hw, 0.34])
+    if not w.empty:
+        wc = w.copy()
+        wc["Month"] = wc["Week_Ending_Date"].dt.month_name().str[:3]
+        monthly = wc.groupby("Month")["Net_Cash_Flow"].sum()
+        order = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov"]
+        monthly = monthly.reindex([m for m in order if m in monthly.index])
+        colors = [C["green"] if v >= 0 else C["red"] for v in monthly.values]
+        ax4.bar(monthly.index, monthly.values, color=colors, alpha=0.85)
+        ax4.axhline(y=0, color=C["gray"], lw=1)
+        ax4.set_title("Monthly Cash Flow Pattern", fontsize=11, fontweight="bold", pad=6)
+        ax4.set_xlabel("Month", fontsize=9)
+        ax4.set_ylabel("USD", fontsize=9)
+        ax4.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: fmt(x, 0)))
         ax4.grid(True, alpha=0.3, axis="y")
-        ax4.tick_params(axis='both', labelsize=7)
-        ax4.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format_currency(x, 0)))
-        plt.setp(ax4.xaxis.get_majorticklabels(), rotation=30, ha="right", fontsize=7)
-    
-    # Footer
-    fig.text(0.05, 0.02, "Analysis Period: January - November 2025",
-             fontsize=8, color=AZ_COLORS["gray"])
-    fig.text(0.95, 0.02, "Page 2 of 5", fontsize=8, color=AZ_COLORS["gray"], ha="right")
+        ax4.tick_params(labelsize=9)
+        plt.setp(ax4.xaxis.get_majorticklabels(), rotation=25, ha="right")
     
     pdf.savefig(fig)
     plt.close(fig)
-    print("  [OK] Page 2: Trends & Category Analysis")
+    print("  [OK] Page 2: Cash Flow Trends")
 
 
 # --------------------------------------------------------------------------------------
-# PAGE 3: PROPHET FORECAST RESULTS
+# PAGE 3: MODEL COMPARISON
 # --------------------------------------------------------------------------------------
 
-def create_page3_prophet_forecast(pdf, data):
-    """Create Page 3: Prophet Forecast Results."""
-    fig = plt.figure(figsize=(11.69, 8.27))  # A4 landscape
-    fig.patch.set_facecolor(AZ_COLORS["white"])
+def page3(pdf, data):
+    """Model Comparison."""
+    fig = plt.figure(figsize=(11.69, 8.27))
+    fig.patch.set_facecolor(C["white"])
+    header(fig, "MODEL COMPARISON & PERFORMANCE", "ARIMA vs Prophet vs Naive | 4-Week Backtesting Validation", 3)
     
-    # Header
-    fig.text(0.5, 0.95, "PROPHET FORECAST RESULTS", fontsize=18,
-             fontweight="bold", color=AZ_COLORS["purple"], ha="center")
-    fig.text(0.5, 0.91, "1-Week, 1-Month, and 6-Month forecasts using Prophet time series model",
-             fontsize=10, color=AZ_COLORS["gray"], ha="center")
+    am = data.get("arima_metrics", pd.DataFrame())
+    pm = data.get("prophet_metrics", pd.DataFrame())
+    nm = data.get("naive_metrics", pd.DataFrame())
     
-    line = plt.Line2D([0.05, 0.95], [0.88, 0.88], transform=fig.transFigure,
-                      color=AZ_COLORS["purple"], linewidth=2)
-    fig.add_artist(line)
-    
-    prophet_forecast = data.get("prophet_forecast", pd.DataFrame())
-    weekly_df = data.get("weekly", pd.DataFrame())
-    
-    # Chart 1: 1-Month Forecast (top) - REDUCED SIZE
-    ax1 = fig.add_axes([0.08, 0.58, 0.87, 0.26])
-    
-    if not prophet_forecast.empty:
-        forecast_1m = prophet_forecast[prophet_forecast["Horizon"] == "1_month"]
-        
-        for country in forecast_1m["Country"].unique():
-            country_data = forecast_1m[forecast_1m["Country"] == country].sort_values("Week_Ending_Date")
-            
-            ax1.plot(country_data["Week_Ending_Date"], country_data["Predicted_Cash_Flow"],
-                    marker="o", markersize=4, linewidth=1.5, label=country,
-                    color=COUNTRY_COLORS.get(country, AZ_COLORS["gray"]))
-            
-            # Confidence interval
-            ax1.fill_between(country_data["Week_Ending_Date"],
-                           country_data["Prediction_Lower_95CI"],
-                           country_data["Prediction_Upper_95CI"],
-                           alpha=0.15, color=COUNTRY_COLORS.get(country, AZ_COLORS["gray"]))
-        
-        ax1.axhline(y=0, color=AZ_COLORS["gray"], linewidth=0.8, linestyle="--")
-        ax1.set_title("1-Month Forecast (4 Weeks Ahead) with 95% Confidence Interval", 
-                     fontsize=10, fontweight="bold", pad=5)
-        ax1.set_xlabel("Week Ending Date", fontsize=8)
-        ax1.set_ylabel("Predicted Cash Flow (USD)", fontsize=8)
-        ax1.legend(loc="upper right", fontsize=6, ncol=4)
-        ax1.grid(True, alpha=0.3)
-        ax1.tick_params(axis='both', labelsize=7)
-        ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format_currency(x, 0)))
-        plt.setp(ax1.xaxis.get_majorticklabels(), rotation=30, ha="right", fontsize=7)
-    
-    # Chart 2: 6-Month Forecast Summary (bottom left) - REDUCED SIZE
-    ax2 = fig.add_axes([0.08, 0.10, 0.52, 0.38])
-    
-    if not prophet_forecast.empty:
-        forecast_6m = prophet_forecast[prophet_forecast["Horizon"] == "6_month"]
-        
-        for country in forecast_6m["Country"].unique():
-            country_data = forecast_6m[forecast_6m["Country"] == country].sort_values("Week_Ending_Date")
-            ax2.plot(country_data["Week_Ending_Date"], country_data["Predicted_Cash_Flow"],
-                    linewidth=1.2, label=country, alpha=0.8,
-                    color=COUNTRY_COLORS.get(country, AZ_COLORS["gray"]))
-        
-        ax2.axhline(y=0, color=AZ_COLORS["gray"], linewidth=0.8, linestyle="--")
-        ax2.set_title("6-Month Forecast (26 Weeks Ahead)", fontsize=10, fontweight="bold", pad=5)
-        ax2.set_xlabel("Week", fontsize=8)
-        ax2.set_ylabel("Predicted USD", fontsize=8)
-        ax2.legend(loc="lower left", fontsize=6, ncol=2)
-        ax2.grid(True, alpha=0.3)
-        ax2.tick_params(axis='both', labelsize=7)
-        ax2.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format_currency(x, 0)))
-        ax2.xaxis.set_major_locator(plt.MaxNLocator(8))
-        plt.setp(ax2.xaxis.get_majorticklabels(), rotation=30, ha="right", fontsize=6)
-    
-    # Summary table (bottom right) - ADJUSTED POSITION
-    ax3 = fig.add_axes([0.65, 0.10, 0.30, 0.38])
-    ax3.axis("off")
-    
-    if not prophet_forecast.empty:
-        # Calculate summary statistics
-        summary_data = []
-        for country in prophet_forecast["Country"].unique():
-            cf_1m = prophet_forecast[(prophet_forecast["Country"] == country) & 
-                                     (prophet_forecast["Horizon"] == "1_month")]["Predicted_Cash_Flow"].sum()
-            cf_6m = prophet_forecast[(prophet_forecast["Country"] == country) & 
-                                     (prophet_forecast["Horizon"] == "6_month")]["Predicted_Cash_Flow"].sum()
-            summary_data.append([country, format_currency(cf_1m), format_currency(cf_6m)])
-        
-        ax3.text(0.5, 0.98, "Forecast Summary", fontsize=10, fontweight="bold",
-                transform=ax3.transAxes, ha="center", color=AZ_COLORS["purple"])
-        
-        # Table header
-        col_labels = ["Country", "1-Month", "6-Month"]
-        table = ax3.table(cellText=summary_data, colLabels=col_labels,
-                         loc="upper center", cellLoc="center",
-                         colColours=[AZ_COLORS["light_gray"]]*3)
-        table.auto_set_font_size(False)
-        table.set_fontsize(7)
-        table.scale(1, 1.4)
-        
-        # Style header
-        for i in range(3):
-            table[(0, i)].set_text_props(fontweight="bold", color=AZ_COLORS["purple"])
-    
-    # Footer
-    fig.text(0.05, 0.02, "Model: Facebook Prophet | Seasonality: Monthly (30.5 days)",
-             fontsize=8, color=AZ_COLORS["gray"])
-    fig.text(0.95, 0.02, "Page 3 of 5", fontsize=8, color=AZ_COLORS["gray"], ha="right")
-    
-    pdf.savefig(fig)
-    plt.close(fig)
-    print("  [OK] Page 3: Prophet Forecast Results")
-
-
-# --------------------------------------------------------------------------------------
-# PAGE 4: MODEL VALIDATION & ACCURACY
-# --------------------------------------------------------------------------------------
-
-def create_page4_model_validation(pdf, data):
-    """Create Page 4: Model Validation & Accuracy."""
-    fig = plt.figure(figsize=(11.69, 8.27))  # A4 landscape
-    fig.patch.set_facecolor(AZ_COLORS["white"])
-    
-    # Header
-    fig.text(0.5, 0.95, "MODEL VALIDATION & PERFORMANCE", fontsize=18,
-             fontweight="bold", color=AZ_COLORS["purple"], ha="center")
-    fig.text(0.5, 0.91, "Backtesting results comparing actual vs predicted cash flows",
-             fontsize=10, color=AZ_COLORS["gray"], ha="center")
-    
-    line = plt.Line2D([0.05, 0.95], [0.88, 0.88], transform=fig.transFigure,
-                      color=AZ_COLORS["purple"], linewidth=2)
-    fig.add_artist(line)
-    
-    prophet_metrics = data.get("prophet_metrics", pd.DataFrame())
-    prophet_comparison = data.get("prophet_comparison", pd.DataFrame())
-    naive_metrics = data.get("naive_metrics", pd.DataFrame())
-    
-    # Chart 1: Actual vs Predicted (top) - REDUCED SIZE
-    ax1 = fig.add_axes([0.08, 0.56, 0.87, 0.28])
-    
-    if not prophet_comparison.empty:
-        countries = prophet_comparison["Country"].unique()
-        x_positions = []
-        x_labels = []
-        
-        for i, country in enumerate(countries):
-            country_data = prophet_comparison[prophet_comparison["Country"] == country].sort_values("Week_Ending_Date")
-            n_points = len(country_data)
-            positions = np.arange(i * (n_points + 1), i * (n_points + 1) + n_points)
-            
-            ax1.bar(positions - 0.2, country_data["Actual_Cash_Flow"], 0.35,
-                   label="Actual" if i == 0 else "", color=AZ_COLORS["blue"], alpha=0.8)
-            ax1.bar(positions + 0.2, country_data["Predicted_Cash_Flow"], 0.35,
-                   label="Predicted" if i == 0 else "", color=AZ_COLORS["purple"], alpha=0.8)
-            
-            x_positions.extend(positions)
-            x_labels.extend([f"{country}\nW{j+1}" for j in range(n_points)])
-        
-        ax1.axhline(y=0, color=AZ_COLORS["gray"], linewidth=0.8)
-        ax1.set_title("Actual vs Prophet Predicted (4-Week Validation Period)", 
-                     fontsize=10, fontweight="bold", pad=5)
-        ax1.set_ylabel("Cash Flow (USD)", fontsize=8)
-        ax1.set_xticks(x_positions)
-        ax1.set_xticklabels(x_labels, fontsize=6)
-        ax1.legend(loc="upper right", fontsize=7)
-        ax1.grid(True, alpha=0.3, axis="y")
-        ax1.tick_params(axis='y', labelsize=7)
-        ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, p: format_currency(x, 0)))
-    
-    # Chart 2: MAPE by Country (bottom left) - REDUCED SIZE
-    ax2 = fig.add_axes([0.08, 0.10, 0.40, 0.36])
-    
-    if not prophet_metrics.empty:
-        countries = prophet_metrics["Country"].values
-        mape_values = prophet_metrics["MAPE_percent"].values
-        
-        colors = []
-        for mape in mape_values:
-            if mape < 25:
-                colors.append(AZ_COLORS["green"])
-            elif mape < 50:
-                colors.append(AZ_COLORS["orange"])
-            else:
-                colors.append(AZ_COLORS["red"])
-        
-        bars = ax2.bar(countries, mape_values, color=colors, alpha=0.85, edgecolor="white")
-        
-        # Add value labels
-        for bar, val in zip(bars, mape_values):
-            ax2.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 2,
-                    f"{val:.1f}%", ha="center", va="bottom", fontsize=7, fontweight="bold")
-        
-        ax2.axhline(y=25, color=AZ_COLORS["green"], linewidth=1.5, linestyle="--", label="Good (<25%)")
-        ax2.axhline(y=50, color=AZ_COLORS["orange"], linewidth=1.5, linestyle="--", label="Fair (<50%)")
-        
-        ax2.set_title("Prophet MAPE by Country", fontsize=10, fontweight="bold", pad=5)
-        ax2.set_ylabel("MAPE (%)", fontsize=8)
-        ax2.set_xlabel("Country", fontsize=8)
-        ax2.tick_params(axis='both', labelsize=7)
-        ax2.legend(loc="upper right", fontsize=6)
-        ax2.grid(True, alpha=0.3, axis="y")
-    
-    # Chart 3: Model Comparison - Prophet vs Naive (bottom right) - REDUCED SIZE
-    ax3 = fig.add_axes([0.55, 0.10, 0.40, 0.36])
-    
-    if not prophet_metrics.empty and not naive_metrics.empty:
-        # Get simple naive metrics for comparison
-        naive_simple = naive_metrics[naive_metrics["Method"] == "simple"]
-        
-        countries = prophet_metrics["Country"].values
-        prophet_mape = prophet_metrics.set_index("Country")["MAPE_percent"]
-        naive_mape = naive_simple.set_index("Country")["MAPE_percent"]
-        
+    # Chart: MAPE Comparison (top half)
+    ax1 = fig.add_axes([ML, 0.52, CW, 0.32])
+    if not am.empty and not pm.empty and not nm.empty:
+        countries = am["Country"].values
         x = np.arange(len(countries))
-        width = 0.35
+        w = 0.25
         
-        bars1 = ax3.bar(x - width/2, [prophet_mape.get(c, 0) for c in countries], width,
-                       label="Prophet", color=AZ_COLORS["purple"], alpha=0.85)
-        bars2 = ax3.bar(x + width/2, [naive_mape.get(c, 0) for c in countries], width,
-                       label="Naive (Simple)", color=AZ_COLORS["blue"], alpha=0.85)
+        a_mape = am.set_index("Country")["MAPE_percent"]
+        p_mape = pm.set_index("Country")["MAPE_percent"]
+        n_mape = nm.set_index("Country")["MAPE_percent"]
         
-        ax3.set_title("Prophet vs Naive Baseline", fontsize=10, fontweight="bold", pad=5)
-        ax3.set_ylabel("MAPE (%)", fontsize=8)
-        ax3.set_xlabel("Country", fontsize=8)
-        ax3.set_xticks(x)
-        ax3.set_xticklabels(countries, fontsize=7)
-        ax3.tick_params(axis='y', labelsize=7)
-        ax3.legend(loc="upper right", fontsize=7)
-        ax3.grid(True, alpha=0.3, axis="y")
+        cap = 100
+        ax1.bar(x - w, [min(a_mape.get(c, 0), cap) for c in countries], w, 
+               label="ARIMA (Best)", color=C["green"], alpha=0.85)
+        ax1.bar(x, [min(p_mape.get(c, 0), cap) for c in countries], w, 
+               label="Prophet", color=C["purple"], alpha=0.85)
+        ax1.bar(x + w, [min(n_mape.get(c, 0), cap) for c in countries], w, 
+               label="Naive", color=C["blue"], alpha=0.85)
+        
+        ax1.axhline(y=25, color=C["green"], lw=1.5, ls="--", alpha=0.8)
+        ax1.axhline(y=50, color=C["orange"], lw=1.5, ls="--", alpha=0.8)
+        ax1.text(len(countries) - 0.5, 27, "Good (<25%)", fontsize=9, color=C["green"])
+        ax1.text(len(countries) - 0.5, 52, "Fair (<50%)", fontsize=9, color=C["orange"])
+        
+        ax1.set_title("MAPE Comparison by Country (Lower is Better)", fontsize=12, fontweight="bold", pad=8)
+        ax1.set_ylabel("MAPE (%)", fontsize=10)
+        ax1.set_xticks(x)
+        ax1.set_xticklabels(countries, fontsize=10)
+        ax1.legend(loc="upper left", fontsize=10)
+        ax1.grid(True, alpha=0.3, axis="y")
+        ax1.tick_params(labelsize=9)
+        ax1.set_ylim(0, cap + 10)
     
-    # Footer
-    fig.text(0.05, 0.02, "Validation: 4-week holdout backtesting | Metrics: RMSE, MAE, MAPE",
-             fontsize=8, color=AZ_COLORS["gray"])
-    fig.text(0.95, 0.02, "Page 4 of 5", fontsize=8, color=AZ_COLORS["gray"], ha="right")
+    # Table Title (positioned clearly above table)
+    fig.text(0.5, 0.46, "DETAILED MODEL PERFORMANCE METRICS", fontsize=12, fontweight="bold",
+            ha="center", color=C["purple"])
     
-    pdf.savefig(fig)
-    plt.close(fig)
-    print("  [OK] Page 4: Model Validation & Performance")
-
-
-# --------------------------------------------------------------------------------------
-# PAGE 5: INSIGHTS & RECOMMENDATIONS
-# --------------------------------------------------------------------------------------
-
-def create_page5_insights(pdf, data):
-    """Create Page 5: Insights & Recommendations."""
-    fig = plt.figure(figsize=(11.69, 8.27))  # A4 landscape - same as other pages
-    fig.patch.set_facecolor(AZ_COLORS["white"])
+    # Performance Table (bottom half)
+    ax2 = fig.add_axes([ML, 0.08, CW, 0.34])
+    ax2.axis("off")
     
-    # Header
-    fig.text(0.5, 0.95, "INSIGHTS & RECOMMENDATIONS", fontsize=18,
-             fontweight="bold", color=AZ_COLORS["purple"], ha="center")
-    fig.text(0.5, 0.91, "Key findings and actionable recommendations for finance teams",
-             fontsize=10, color=AZ_COLORS["gray"], ha="center")
-    
-    line = plt.Line2D([0.05, 0.95], [0.88, 0.88], transform=fig.transFigure,
-                      color=AZ_COLORS["purple"], linewidth=2)
-    fig.add_artist(line)
-    
-    prophet_metrics = data.get("prophet_metrics", pd.DataFrame())
-    
-    # Key Insights Box (Left) - adjusted position
-    ax_insights = fig.add_axes([0.05, 0.42, 0.43, 0.42])
-    ax_insights.set_facecolor(AZ_COLORS["light_gray"])
-    ax_insights.axis("off")
-    
-    insights_text = """KEY INSIGHTS
-
-[Cash Flow Patterns]
-  - Consistent negative net cash flow across most countries
-  - Operating cash flows dominate (AP payments, Payroll)
-  - Month-end patterns visible in weekly data
-
-[Forecast Performance]
-  - Prophet model shows variable accuracy by country
-  - Best performance: ID, TH (MAPE < 30%)
-  - Challenging: KR, SS (high volatility)
-
-[Liquidity Observations]
-  - Short-term liquidity risk: All countries show
-    negative projected cash flows
-  - 6-month outlook: Stable negative trend expected
-  - Key drivers: Accounts Payable, Payroll cycles
-
-[Data Quality Notes]
-  - 44 weeks of historical data (Jan-Nov 2025)
-  - 8 countries/entities analyzed
-  - Clean data with no missing values"""
-    
-    ax_insights.text(0.05, 0.98, insights_text, transform=ax_insights.transAxes,
-                    fontsize=8.5, verticalalignment="top", fontfamily="monospace",
-                    color=AZ_COLORS["black"], linespacing=1.3)
-    
-    for spine in ax_insights.spines.values():
-        spine.set_visible(True)
-        spine.set_color(AZ_COLORS["purple"])
-        spine.set_linewidth(2)
-    
-    # Recommendations Box (Right) - adjusted position
-    ax_recs = fig.add_axes([0.52, 0.42, 0.43, 0.42])
-    ax_recs.set_facecolor("#F5F5F5")
-    ax_recs.axis("off")
-    
-    recs_text = """RECOMMENDATIONS
-
-[Short-Term Actions: 1-4 Weeks]
-  - Monitor high-volatility countries (KR, SS)
-  - Review AP payment timing for optimization
-  - Set up alerts for cash flow deviations > 20%
-
-[Medium-Term Actions: 1-6 Months]
-  - Implement rolling forecast updates (weekly)
-  - Consider ensemble model approach
-  - Add external regressors (FX rates, seasonality)
-
-[Model Improvements]
-  - Collect more historical data for better training
-  - Add ARIMA/XGBoost for comparison
-  - Implement anomaly detection pipeline
-
-[Dashboard Enhancements]
-  - Add real-time data refresh capability
-  - Include drill-down by transaction type
-  - Integrate with Power BI for interactivity"""
-    
-    ax_recs.text(0.05, 0.98, recs_text, transform=ax_recs.transAxes,
-                fontsize=8.5, verticalalignment="top", fontfamily="monospace",
-                color=AZ_COLORS["black"], linespacing=1.3)
-    
-    for spine in ax_recs.spines.values():
-        spine.set_visible(True)
-        spine.set_color(AZ_COLORS["blue"])
-        spine.set_linewidth(2)
-    
-    # Model Performance Summary Title (separate from table)
-    fig.text(0.5, 0.38, "MODEL PERFORMANCE SUMMARY", fontsize=13, fontweight="bold",
-             ha="center", color=AZ_COLORS["purple"])
-    
-    # Performance Summary Table (Bottom) - more space
-    ax_table = fig.add_axes([0.08, 0.06, 0.84, 0.28])
-    ax_table.axis("off")
-    
-    if not prophet_metrics.empty:
+    if not am.empty:
         table_data = []
-        for _, row in prophet_metrics.iterrows():
-            if row["MAPE_percent"] < 30:
-                status = "Good"
-            elif row["MAPE_percent"] < 60:
-                status = "Fair"
-            else:
-                status = "Review"
+        for _, r in am.iterrows():
+            c = r["Country"]
+            a, p, n = r["MAPE_percent"], p_mape.get(c, 0), n_mape.get(c, 0)
+            best_model = "ARIMA" if a <= min(p, n) else "Prophet" if p <= n else "Naive"
+            status = "Good" if a < 30 else "Fair" if a < 60 else "Review"
             table_data.append([
-                row["Country"],
-                f"${row['RMSE_USD']:,.0f}",
-                f"${row['MAE_USD']:,.0f}",
-                f"{row['MAPE_percent']:.1f}%",
+                c, 
+                f"${r['RMSE_USD']:,.0f}", 
+                f"${r['MAE_USD']:,.0f}", 
+                f"{a:.1f}%", 
+                f"{p:.1f}%", 
+                f"{n:.1f}%", 
+                best_model, 
                 status
             ])
         
-        col_labels = ["Country", "RMSE (USD)", "MAE (USD)", "MAPE", "Status"]
-        table = ax_table.table(cellText=table_data, colLabels=col_labels,
-                              loc="center", cellLoc="center",
-                              colWidths=[0.15, 0.2, 0.2, 0.15, 0.15])
+        cols = ["Country", "RMSE", "MAE", "ARIMA", "Prophet", "Naive", "Winner", "Status"]
+        table = ax2.table(
+            cellText=table_data, 
+            colLabels=cols, 
+            loc="upper center", 
+            cellLoc="center",
+            colWidths=[0.10, 0.13, 0.13, 0.10, 0.10, 0.10, 0.10, 0.10]
+        )
         table.auto_set_font_size(False)
         table.set_fontsize(9)
-        table.scale(1.0, 1.8)  # Increase row height
+        table.scale(1.0, 1.8)
         
-        # Style header row (row 0)
-        for i in range(5):
-            cell = table[(0, i)]
-            cell.set_facecolor(AZ_COLORS["purple"])
-            cell.set_text_props(fontweight="bold", color="white")
-            cell.set_height(0.08)  # Taller header
+        # Style header
+        for i in range(8):
+            table[(0, i)].set_facecolor(C["purple"])
+            table[(0, i)].set_text_props(fontweight="bold", color="white")
         
-        # Style data rows with alternating colors
-        for row_idx in range(1, len(table_data) + 1):
-            for col_idx in range(5):
-                cell = table[(row_idx, col_idx)]
-                if row_idx % 2 == 0:
-                    cell.set_facecolor("#F5F5F5")
-                else:
-                    cell.set_facecolor("white")
-                
-                # Color code Status column
-                if col_idx == 4:
-                    status_val = table_data[row_idx - 1][4]
-                    if status_val == "Good":
-                        cell.set_text_props(color=AZ_COLORS["green"], fontweight="bold")
-                    elif status_val == "Fair":
-                        cell.set_text_props(color=AZ_COLORS["orange"], fontweight="bold")
-                    else:
-                        cell.set_text_props(color=AZ_COLORS["red"], fontweight="bold")
-    
-    # Footer
-    fig.text(0.05, 0.02, "Prepared by: Three Guys Team | AstraZeneca Datathon 2025",
-             fontsize=8, color=AZ_COLORS["gray"])
-    fig.text(0.95, 0.02, "Page 5 of 5", fontsize=8, color=AZ_COLORS["gray"], ha="right")
+        # Style cells
+        for ri in range(1, len(table_data) + 1):
+            # Winner column
+            if "ARIMA" in table_data[ri-1][6]:
+                table[(ri, 6)].set_text_props(color=C["green"], fontweight="bold")
+            # Status column
+            s = table_data[ri-1][7]
+            color = C["green"] if s == "Good" else C["orange"] if s == "Fair" else C["red"]
+            table[(ri, 7)].set_text_props(color=color, fontweight="bold")
     
     pdf.savefig(fig)
     plt.close(fig)
-    print("  [OK] Page 5: Insights & Recommendations")
+    print("  [OK] Page 3: Model Comparison")
 
 
 # --------------------------------------------------------------------------------------
-# MAIN DASHBOARD GENERATOR
+# PAGE 4: ARIMA FORECASTS
+# --------------------------------------------------------------------------------------
+
+def page4(pdf, data):
+    """ARIMA Forecasts with Summary Tables."""
+    fig = plt.figure(figsize=(11.69, 8.27))
+    fig.patch.set_facecolor(C["white"])
+    header(fig, "ARIMA FORECAST RESULTS", "1-Month and 6-Month Predictions with Confidence Intervals", 4)
+    
+    fc = data.get("arima_forecast", pd.DataFrame())
+    cp = data.get("arima_comparison", pd.DataFrame())
+    
+    # Chart: Forecast Visualization (top)
+    ax1 = fig.add_axes([ML, 0.58, CW, 0.26])
+    if not fc.empty:
+        f1m = fc[fc["Horizon"] == "1_month"]
+        for c in f1m["Country"].unique():
+            d = f1m[f1m["Country"] == c].sort_values("Week_Ending_Date")
+            ax1.plot(d["Week_Ending_Date"], d["Predicted_Cash_Flow"], marker="o", ms=4, lw=1.5,
+                    label=c, color=CC.get(c, C["gray"]))
+            ax1.fill_between(d["Week_Ending_Date"], 
+                           d["Prediction_Lower_95CI"], 
+                           d["Prediction_Upper_95CI"],
+                           alpha=0.12, color=CC.get(c, C["gray"]))
+        ax1.axhline(y=0, color=C["gray"], lw=1, ls="--")
+        ax1.set_title("1-Month ARIMA Forecast with 95% CI", fontsize=11, fontweight="bold", pad=6)
+        ax1.set_xlabel("Week", fontsize=9)
+        ax1.set_ylabel("Predicted Cash Flow (USD)", fontsize=9)
+        ax1.legend(loc="upper right", fontsize=7, ncol=4)
+        ax1.grid(True, alpha=0.3)
+        ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: fmt(x, 0)))
+        ax1.tick_params(labelsize=8)
+        plt.setp(ax1.xaxis.get_majorticklabels(), rotation=20, ha="right")
+    
+    hw = (CW - 0.06) / 2
+    
+    # Left Table Title
+    fig.text(ML + hw/2, 0.52, "FORECAST SUMMARY BY COUNTRY", fontsize=11, fontweight="bold",
+            ha="center", color=C["purple"])
+    
+    # Left Table: Forecast Summary
+    ax2 = fig.add_axes([ML, 0.10, hw, 0.38])
+    ax2.axis("off")
+    
+    if not fc.empty:
+        table_data = []
+        for c in fc["Country"].unique():
+            f1 = fc[(fc["Country"] == c) & (fc["Horizon"] == "1_month")]
+            f6 = fc[(fc["Country"] == c) & (fc["Horizon"] == "6_month")]
+            cf1 = f1["Predicted_Cash_Flow"].sum()
+            cf6 = f6["Predicted_Cash_Flow"].sum()
+            avg = cf6 / len(f6) if len(f6) > 0 else 0
+            table_data.append([c, fmt(cf1), fmt(cf6), fmt(avg)])
+        
+        cols = ["Country", "1-Month", "6-Month", "Avg/Week"]
+        table = ax2.table(
+            cellText=table_data, 
+            colLabels=cols, 
+            loc="upper center", 
+            cellLoc="center",
+            colWidths=[0.20, 0.28, 0.28, 0.24]
+        )
+        table.auto_set_font_size(False)
+        table.set_fontsize(9)
+        table.scale(1.0, 1.7)
+        
+        for i in range(4):
+            table[(0, i)].set_facecolor(C["green"])
+            table[(0, i)].set_text_props(fontweight="bold", color="white")
+    
+    # Right Table Title
+    fig.text(ML + hw + 0.06 + hw/2, 0.52, "VALIDATION: ACTUAL vs PREDICTED", fontsize=11, fontweight="bold",
+            ha="center", color=C["purple"])
+    
+    # Right Table: Validation
+    ax3 = fig.add_axes([ML + hw + 0.06, 0.10, hw, 0.38])
+    ax3.axis("off")
+    
+    if not cp.empty:
+        val_data = []
+        for c in cp["Country"].unique():
+            d = cp[cp["Country"] == c]
+            actual = d["Actual_Cash_Flow"].sum()
+            pred = d["Predicted_Cash_Flow"].sum()
+            err = abs(actual - pred)
+            acc = max(0, 100 - (err / abs(actual) * 100)) if actual != 0 else 0
+            val_data.append([c, fmt(actual), fmt(pred), f"{acc:.0f}%"])
+        
+        cols = ["Country", "Actual", "Predicted", "Accuracy"]
+        table = ax3.table(
+            cellText=val_data, 
+            colLabels=cols, 
+            loc="upper center", 
+            cellLoc="center",
+            colWidths=[0.20, 0.28, 0.28, 0.20]
+        )
+        table.auto_set_font_size(False)
+        table.set_fontsize(9)
+        table.scale(1.0, 1.7)
+        
+        for i in range(4):
+            table[(0, i)].set_facecolor(C["blue"])
+            table[(0, i)].set_text_props(fontweight="bold", color="white")
+        
+        # Color accuracy
+        for ri in range(1, len(val_data) + 1):
+            acc_val = float(val_data[ri-1][3].replace("%", ""))
+            color = C["green"] if acc_val >= 70 else C["orange"] if acc_val >= 50 else C["red"]
+            table[(ri, 3)].set_text_props(color=color, fontweight="bold")
+    
+    pdf.savefig(fig)
+    plt.close(fig)
+    print("  [OK] Page 4: ARIMA Forecasts")
+
+
+# --------------------------------------------------------------------------------------
+# PAGE 5: ANOMALIES & RECOMMENDATIONS
+# --------------------------------------------------------------------------------------
+
+def page5(pdf, data):
+    """Anomaly Detection & Recommendations."""
+    fig = plt.figure(figsize=(11.69, 8.27))
+    fig.patch.set_facecolor(C["white"])
+    header(fig, "ANOMALY DETECTION & RECOMMENDATIONS", "Dual-layer: Structural (Isolation Forest) + Transaction (Z-Score)", 5)
+    
+    sa = data.get("structural_anomalies", pd.DataFrame())
+    ta = data.get("transaction_anomalies", pd.DataFrame())
+    am = data.get("arima_metrics", pd.DataFrame())
+    
+    hw = (CW - 0.06) / 2
+    n_struct = (sa["Anomaly_Flag"] == -1).sum() if not sa.empty else 0
+    n_txn = len(ta) if not ta.empty else 0
+    
+    # Chart: Anomaly Timeline (top left)
+    ax1 = fig.add_axes([ML, 0.54, hw, 0.30])
+    if not sa.empty:
+        for c in sa["Country"].unique():
+            d = sa[sa["Country"] == c].sort_values("Week_Ending_Date")
+            ax1.plot(d["Week_Ending_Date"], d["Net_Cash_Flow"], 
+                    color=CC.get(c, C["gray"]), alpha=0.3, lw=1)
+            a = d[d["Anomaly_Flag"] == -1]
+            if not a.empty:
+                ax1.scatter(a["Week_Ending_Date"], a["Net_Cash_Flow"], 
+                           color=C["red"], s=35, zorder=5, alpha=0.8)
+        ax1.axhline(y=0, color=C["gray"], lw=1, ls="--")
+        ax1.scatter([], [], color=C["red"], s=35, label=f"Anomaly ({n_struct})")
+        ax1.set_title("Structural Anomalies Timeline", fontsize=11, fontweight="bold", pad=6)
+        ax1.set_xlabel("Date", fontsize=9)
+        ax1.set_ylabel("Cash Flow (USD)", fontsize=9)
+        ax1.legend(fontsize=9)
+        ax1.grid(True, alpha=0.3)
+        ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: fmt(x, 0)))
+        ax1.tick_params(labelsize=8)
+        plt.setp(ax1.xaxis.get_majorticklabels(), rotation=25, ha="right")
+    
+    # Anomaly Summary Box (top right)
+    ax2 = fig.add_axes([ML + hw + 0.06, 0.54, hw, 0.30])
+    ax2.set_facecolor("#FFF8E1")
+    ax2.axis("off")
+    
+    anomaly_text = f"""ANOMALY DETECTION SUMMARY
+==============================
+
+STRUCTURAL ANOMALIES
+  Detected: {n_struct}
+  Method: Isolation Forest (5%)
+  Features: Cash Flow, Rolling Stats
+
+TRANSACTION ANOMALIES
+  Detected: {n_txn:,}
+  Method: Z-Score (|Z| > 3.5)
+
+TOP RISK COUNTRIES"""
+    
+    if not sa.empty:
+        top = sa[sa["Anomaly_Flag"] == -1].groupby("Country").size()
+        top = top.sort_values(ascending=False).head(3)
+        for c, n in top.items():
+            anomaly_text += f"\n  {c}: {n} weeks"
+    
+    ax2.text(0.06, 0.94, anomaly_text, transform=ax2.transAxes, fontsize=9, 
+            va="top", fontfamily="monospace", linespacing=1.25)
+    for s in ax2.spines.values():
+        s.set_visible(True)
+        s.set_color(C["orange"])
+        s.set_linewidth(2)
+    
+    # Key Insights (bottom left)
+    ax3 = fig.add_axes([ML, 0.08, hw, 0.40])
+    ax3.set_facecolor(C["light"])
+    ax3.axis("off")
+    
+    best_c = am.loc[am["MAPE_percent"].idxmin(), "Country"] if not am.empty else "N/A"
+    worst_c = am.loc[am["MAPE_percent"].idxmax(), "Country"] if not am.empty else "N/A"
+    
+    insights = f"""KEY INSIGHTS
+==============================
+
+CASH FLOW PATTERNS
+  - All countries negative net flow
+  - Operating flows dominate
+  - Strong weekly seasonality
+  - Month-end payment cycles
+
+MODEL PERFORMANCE
+  - ARIMA = Best model
+  - Best: {best_c}
+  - Review: {worst_c}
+  - 4-week holdout validation
+
+DATA QUALITY
+  - 44 weeks historical data
+  - 84,528 transactions
+  - Minimal data gaps"""
+    
+    ax3.text(0.06, 0.94, insights, transform=ax3.transAxes, fontsize=9, 
+            va="top", fontfamily="monospace", linespacing=1.25)
+    for s in ax3.spines.values():
+        s.set_visible(True)
+        s.set_color(C["purple"])
+        s.set_linewidth(2)
+    
+    # Recommendations (bottom right)
+    ax4 = fig.add_axes([ML + hw + 0.06, 0.08, hw, 0.40])
+    ax4.set_facecolor("#E3F2FD")
+    ax4.axis("off")
+    
+    recs = """RECOMMENDATIONS
+==============================
+
+SHORT-TERM (1-4 Weeks)
+  - Deploy ARIMA in production
+  - Set anomaly alerts (>2 std)
+  - Monitor KR, TW closely
+
+MEDIUM-TERM (1-6 Months)
+  - Weekly rolling updates
+  - Add FX rate regressors
+  - Country-specific tuning
+
+MODEL IMPROVEMENTS
+  - Expand data (2+ years)
+  - Test ensemble models
+  - Add holiday adjustments
+  - Real-time integration"""
+    
+    ax4.text(0.06, 0.94, recs, transform=ax4.transAxes, fontsize=9, 
+            va="top", fontfamily="monospace", linespacing=1.25)
+    for s in ax4.spines.values():
+        s.set_visible(True)
+        s.set_color(C["blue"])
+        s.set_linewidth(2)
+    
+    pdf.savefig(fig)
+    plt.close(fig)
+    print("  [OK] Page 5: Anomalies & Recommendations")
+
+
+# --------------------------------------------------------------------------------------
+# MAIN
 # --------------------------------------------------------------------------------------
 
 def generate_dashboard_pdf():
-    """Generate the complete 5-page PDF dashboard."""
-    
-    print("\n" + "=" * 70)
-    print("  GENERATING PROFESSIONAL PDF DASHBOARD")
+    """Generate the 5-page PDF dashboard."""
+    print("\n" + "=" * 60)
+    print("  GENERATING PROFESSIONAL DASHBOARD")
     print("  AstraZeneca Cash Flow Challenge")
-    print("=" * 70)
+    print("=" * 60)
     
-    # Create output directory
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    
-    # Load all data
-    print("\n[Step 1] Loading data...")
+    print("\n[Step 1] Loading trained model outputs...")
     data = load_all_data()
     
-    for key, df in data.items():
-        if isinstance(df, pd.DataFrame):
-            print(f"  - {key}: {len(df)} records")
+    output = OUTPUT_DIR / "AstraZeneca_CashFlow_Dashboard.pdf"
+    print(f"\n[Step 2] Generating PDF...")
     
-    # Generate PDF
-    output_file = OUTPUT_DIR / "AstraZeneca_CashFlow_Dashboard.pdf"
+    with PdfPages(output) as pdf:
+        page1(pdf, data)
+        page2(pdf, data)
+        page3(pdf, data)
+        page4(pdf, data)
+        page5(pdf, data)
     
-    print(f"\n[Step 2] Generating PDF pages...")
+    print("\n" + "=" * 60)
+    print("  DASHBOARD COMPLETE!")
+    print("=" * 60)
+    print(f"\n  Output: {output}")
+    print(f"  Size: {output.stat().st_size / 1024:.1f} KB")
+    print(f"  Pages: 5")
     
-    with PdfPages(output_file) as pdf:
-        create_page1_executive_summary(pdf, data)
-        create_page2_trends_analysis(pdf, data)
-        create_page3_prophet_forecast(pdf, data)
-        create_page4_model_validation(pdf, data)
-        create_page5_insights(pdf, data)
-    
-    print("\n" + "=" * 70)
-    print("  DASHBOARD GENERATION COMPLETE!")
-    print("=" * 70)
-    print(f"\n[PDF] Output: {output_file}")
-    print(f"      Size: {output_file.stat().st_size / 1024:.1f} KB")
-    
-    return output_file
+    return output
 
-
-# --------------------------------------------------------------------------------------
-# ENTRY POINT
-# --------------------------------------------------------------------------------------
 
 if __name__ == "__main__":
     generate_dashboard_pdf()
-
