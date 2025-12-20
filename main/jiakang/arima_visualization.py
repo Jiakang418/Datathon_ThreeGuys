@@ -110,11 +110,84 @@ def plot_metrics_comparison(metrics_df):
     plt.savefig(PLOTS_DIR / "metrics_mape_comparison.png", dpi=150)
     plt.close()
 
+def plot_train_vs_validation(results: dict, weeks_to_show: int = 40):
+    """
+    Plot ARIMA train vs validation for each country with company colors
+    and save each plot as PNG under PLOTS_DIR.
+    
+    Args:
+        results: Dictionary returned by run_arima_pipeline()
+        weeks_to_show: Number of weeks from training to display
+    """
+    # Company colors
+    COLOR_TRAIN = "#830051"      # Mulberry
+    COLOR_VAL_ACTUAL = "#C4D600" # Lime Green
+    COLOR_VAL_PRED = "#003865"   # Navy
+    COLOR_HIGHLIGHT = "#F0AB00"  # Gold for validation period
+    
+    for country, data in results.items():
+        train_df = data["train_df"].sort_values("Week_Ending_Date").reset_index(drop=True)
+        val_df = data["val_df"].sort_values("Week_Ending_Date").reset_index(drop=True)
+        predictions = data["predictions"]
+        
+        plt.figure(figsize=(14, 6))
+        
+        # Training actual
+        plt.plot(
+            train_df["Week_Ending_Date"][-weeks_to_show:], 
+            train_df["Net_Cash_Flow"][-weeks_to_show:], 
+            label="Training Actual", 
+            color=COLOR_TRAIN,
+            marker="o",
+            linewidth=2
+        )
+        
+        # Validation actual
+        plt.plot(
+            val_df["Week_Ending_Date"], 
+            val_df["Net_Cash_Flow"], 
+            label="Validation Actual", 
+            color=COLOR_VAL_ACTUAL,
+            marker="s",
+            linewidth=2
+        )
+        
+        # Validation predicted
+        plt.plot(
+            val_df["Week_Ending_Date"], 
+            predictions, 
+            label="Validation Predicted", 
+            color=COLOR_VAL_PRED,
+            marker="x",
+            linestyle="--",
+            linewidth=2
+        )
+        
+        # Highlight validation period
+        plt.axvspan(val_df["Week_Ending_Date"].min(), val_df["Week_Ending_Date"].max(), color=COLOR_HIGHLIGHT, alpha=0.1)
+        
+        plt.title(f"{country}: ARIMA Train vs Validation", fontsize=14, fontweight="bold")
+        plt.xlabel("Week Ending Date", fontsize=12)
+        plt.ylabel("Net Cash Flow", fontsize=12)
+        plt.legend(loc="best", fontsize=11)
+        plt.grid(alpha=0.3)
+        plt.gca().xaxis.set_major_formatter(mdates.DateFormatter('%Y-%m-%d'))
+        plt.xticks(rotation=45)
+        plt.tight_layout()
+        
+        # Save PNG under arima_plots
+        plt.savefig(PLOTS_DIR / f"train_vs_val_{country.replace(' ', '_')}.png", dpi=150)
+        plt.close()
+
 # --------------------------------------------------------------------------------------
 # MAIN FUNCTION
 # --------------------------------------------------------------------------------------
-def generate_all_visualizations():
+def generate_all_visualizations(results_dict=None):
     comparison_df, forecast_df, metrics_df = load_results_data()
     plot_validation_comparison(comparison_df)
     plot_forecast_with_history(comparison_df, forecast_df)
     plot_metrics_comparison(metrics_df)
+    plot_train_vs_validation(results_dict)
+    
+    if results_dict:
+        plot_train_vs_validation(results_dict)

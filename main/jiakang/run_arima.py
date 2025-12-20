@@ -1,15 +1,16 @@
 import sys
 from pathlib import Path
+import pandas as pd
+
+# Ensure local modules are importable
 sys.path.insert(0, str(Path(__file__).parent))
 
 def main():
-    print("\n>>> Starting ARIMA Cash Flow Forecasting...\n")
-    
+    # Run ARIMA pipeline
     from arima_forecasting import run_arima_pipeline
     results, forecasts, metrics = run_arima_pipeline()
     
     # Save validation comparison CSV
-    import pandas as pd
     output_dir = Path(__file__).parent / "arima_results"
     output_dir.mkdir(exist_ok=True)
     
@@ -21,7 +22,7 @@ def main():
                 "Country": country,
                 "Week_Ending_Date": pd.Timestamp(date),
                 "Actual_Cash_Flow": result["actuals"][i],
-                "Predicted_Cash_Flow": result["predictions"][i]  # Fixed: was 'Predictions'
+                "Predicted_Cash_Flow": result["predictions"][i]
             })
     comparison_df = pd.DataFrame(comparison_list)
     comparison_df.to_csv(output_dir / "arima_actual_vs_predicted.csv", index=False)
@@ -29,7 +30,7 @@ def main():
     # Optional visualizations
     if "--visualize" in sys.argv or "-v" in sys.argv:
         from arima_visualization import generate_all_visualizations
-        generate_all_visualizations()
+        generate_all_visualizations(results)
     
     print("\n[DONE] ARIMA pipeline complete!")
 
