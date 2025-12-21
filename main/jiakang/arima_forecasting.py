@@ -27,25 +27,12 @@ warnings.filterwarnings("ignore")
 # --------------------------------------------------------------------------------------
 # CONFIGURATION CONSTANTS
 # --------------------------------------------------------------------------------------
-# Resolve base directory: main/jiakang/arima_forecasting.py → Datathon_ThreeGuys/
-BASE_DIR = Path(__file__).resolve().parents[2]
-
-# Try multiple possible paths for the data file
-POSSIBLE_DATA_PATHS = [
-    BASE_DIR / "data" / "model_dataset" / "weekly_features.csv",
-    BASE_DIR / "data" / "processed" / "weekly_features.csv",
-    BASE_DIR / "Steve" / "processed_weekly_cashflow.csv"
-]
-
-# Find the first existing data file
-DATA_FILE = None
-for path in POSSIBLE_DATA_PATHS:
-    if path.exists():
-        DATA_FILE = path
-        break
-
+BASE_DIR = Path(__file__).resolve().parents[2]  
+DATA_FILE = BASE_DIR / "data" / "model_dataset" / "weekly_features.csv"
 OUTPUT_DIR = Path(__file__).parent / "arima_results"
 OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+
+# main/jiakang/arima_forecasting.py → Datathon_ThreeGuys/
 
 
 
@@ -69,17 +56,14 @@ logger = logging.getLogger(__name__)
 # --------------------------------------------------------------------------------------
 
 def load_weekly_data() -> pd.DataFrame:
-    """Load weekly features data from CSV file."""
-    if DATA_FILE is None or not DATA_FILE.exists():
-        error_msg = "Weekly data file not found. Checked paths:\n"
-        for path in POSSIBLE_DATA_PATHS:
-            error_msg += f"  - {path}\n"
-        raise FileNotFoundError(error_msg)
     
+
+    if not DATA_FILE.exists():
+        raise FileNotFoundError(f"Weekly data not found at {DATA_FILE}")
     logger.info(f"Loading data from {DATA_FILE}")
     df = pd.read_csv(DATA_FILE, parse_dates=["Week_Ending_Date"])
     logger.info(f"Loaded {len(df)} rows, {len(df['Country_Name'].unique())} countries")
-    return df
+    return pd.read_csv(DATA_FILE)
 
 # --------------------------------------------------------------------------------------
 # TRAIN-TEST SPLIT
@@ -95,29 +79,22 @@ def train_validation_split(df: pd.DataFrame, validation_weeks: int = VALIDATION_
 # EVALUATION METRICS
 # --------------------------------------------------------------------------------------
 
-def calculate_wape(actual: np.ndarray, predicted: np.ndarray) -> float:
-    actual_sum = np.sum(np.abs(actual))
-    if actual_sum == 0:
-        return None
-    return np.sum(np.abs(actual - predicted)) / actual_sum * 100
-
 def calculate_metrics(actual: np.ndarray, predicted: np.ndarray) -> Dict[str, float]:
     rmse = np.sqrt(mean_squared_error(actual, predicted))
     mae = mean_absolute_error(actual, predicted)
     threshold = max(np.median(np.abs(actual)) * 0.01, 1e-6)
     mask = np.abs(actual) > threshold
     mape = np.mean(np.abs((actual[mask] - predicted[mask]) / actual[mask])) * 100 if mask.sum() > 0 else None
-    wape = calculate_wape(actual, predicted)
     return {
         "RMSE": round(rmse, 2),
         "MAE": round(mae, 2),
-        "MAPE_percent": round(mape, 2) if mape is not None else None,
-        "WAPE_percent": round(wape, 2) if wape is not None else None
+        "MAPE_percent": round(mape, 2) if mape is not None else None
     }
 
 # --------------------------------------------------------------------------------------
 # ARIMA MODEL CREATION
 # --------------------------------------------------------------------------------------
+
 def fit_arima_model(endog: pd.Series, exog: pd.DataFrame = None, order: Tuple[int, int, int] = ARIMA_ORDER):
     try:
         model = ARIMA(endog=endog, exog=exog, order=order)
@@ -233,7 +210,6 @@ def run_arima_pipeline():
             "RMSE": metrics["RMSE"],
             "MAE": metrics["MAE"],
             "MAPE_percent": metrics["MAPE_percent"],
-            "WAPE_percent": metrics["WAPE_percent"],
             "Train_Weeks": len(result["train_df"]),
             "Validation_Weeks": len(result["val_df"])
         })
@@ -268,20 +244,17 @@ def run_arima_pipeline():
     if not metrics_df.empty:
         avg_rmse = metrics_df["RMSE"].mean()
         avg_mape = metrics_df["MAPE_percent"].mean()
-        avg_wape = metrics_df["WAPE_percent"].mean()
 
         # Format table nicely
         metrics_table = metrics_df.copy()
         metrics_table["RMSE_USD"] = metrics_table["RMSE"].apply(lambda x: f"${x:,.2f}")
         metrics_table["MAE_USD"] = metrics_table["MAE"].apply(lambda x: f"${x:,.2f}")
-        metrics_table["WAPE_percent"] = metrics_table["WAPE_percent"].round(2)
-        metrics_table = metrics_table[["Country", "RMSE_USD", "MAE_USD", "MAPE_percent", "WAPE_percent", "Train_Weeks", "Validation_Weeks"]]
+        metrics_table = metrics_table[["Country", "RMSE_USD", "MAE_USD", "MAPE_percent", "Train_Weeks", "Validation_Weeks"]]
 
         logger.info("\nOverall Model Performance:")
         logger.info("\n" + metrics_table.to_string(index=False))
         logger.info(f"\nAverage RMSE across all countries: ${avg_rmse:,.2f}")
         logger.info(f"Average MAPE across all countries: {avg_mape:.1f}%")
-        logger.info(f"Average WAPE across all countries: {avg_wape:.2f}%")
     
     logger.info("\n" + "="*70)
     logger.info("[OK] ARIMA pipeline complete!")
