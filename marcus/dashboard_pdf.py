@@ -74,12 +74,12 @@ def load_all_data():
     
     files = {
         "weekly": (DATA_DIR / "processed_weekly_cashflow.csv", ["Week_Ending_Date"]),
-        "arima_metrics": (OUTPUTS_DIR / "hybrid_arima_backtest_metrics.csv", None),
-        "arima_forecast": (OUTPUTS_DIR / "hybrid_arima_future_forecasts.csv", ["Week_Ending_Date"]),
-        "arima_comparison": (OUTPUTS_DIR / "hybrid_arima_actual_vs_predicted.csv", ["Week_Ending_Date"]),
+        "arima_metrics": (ARIMA_DIR / "arima_results" / "arima_backtest_metrics.csv", None),
+        "arima_forecast": (ARIMA_DIR / "arima_results" / "arima_future_forecasts.csv", ["Week_Ending_Date"]),
+        "arima_comparison": (ARIMA_DIR / "arima_results" / "arima_actual_vs_predicted.csv", ["Week_Ending_Date"]),
         "arima_summary": (ARIMA_DIR / "arima_best_model_summary.csv", None),
-        "prophet_metrics": (OUTPUTS_DIR / "hybrid_prophet_backtest_metrics.csv", None),
-        "naive_metrics": (OUTPUTS_DIR / "hybrid_naive_backtest_metrics.csv", None),
+        "prophet_metrics": (MARCUS_DIR / "prophet_results" / "prophet_backtest_metrics.csv", None),
+        "naive_metrics": (MARCUS_DIR / "naive_results" / "naive_backtest_metrics.csv", None),
         "structural_anomalies": (OUTPUTS_DIR / "anomalies_structural_level.csv", ["Week_Ending_Date"]),
         "transaction_anomalies": (OUTPUTS_DIR / "anomalies_transaction_level.csv", None),
     }
@@ -452,7 +452,8 @@ def page3(pdf, data):
         
         a_mape = am.set_index("Country")["MAPE_percent"]
         p_mape = pm.set_index("Country")["MAPE_percent"]
-        n_mape = nm.set_index("Country")["MAPE_percent"]
+        # For naive, get best (lowest MAPE) method per country
+        n_mape = nm.groupby("Country")["MAPE_percent"].min()
         
         cap = 100
         ax1.bar(x - w, [min(a_mape.get(c, 0), cap) for c in countries], w, 
@@ -492,8 +493,8 @@ def page3(pdf, data):
             status = "Good" if a < 30 else "Fair" if a < 60 else "Review"
             table_data.append([
                 c, 
-                f"${r['RMSE_USD']:,.0f}", 
-                f"${r['MAE_USD']:,.0f}", 
+                f"${r['RMSE']:,.0f}", 
+                f"${r['MAE']:,.0f}", 
                 f"{a:.1f}%", 
                 f"{p:.1f}%", 
                 f"{n:.1f}%", 
@@ -568,20 +569,16 @@ def page4(pdf, data):
     # Validation forecast
     if not id_valid.empty:
         ax_id.plot(id_valid["Week_Ending_Date"], id_valid["Predicted_Cash_Flow"], 
-                   label="Validation (Hybrid ARIMA)", ls="--", color=C["purple"], lw=1.5, marker="s", ms=3)
-        ax_id.fill_between(id_valid["Week_Ending_Date"], 
-                          id_valid["Prediction_Lower_95CI"], 
-                          id_valid["Prediction_Upper_95CI"], 
-                          color=C["purple"], alpha=0.1, label="95% CI")
+                   label="Validation (ARIMA)", ls="--", color=C["purple"], lw=1.5, marker="s", ms=3)
         
     # Future Forecast (6-month)
     if not id_fc6.empty:
         ax_id.plot(id_fc6["Week_Ending_Date"], id_fc6["Predicted_Cash_Flow"], 
                    label="Future Forecast", marker="*", ms=5, color=C["green"], ls="-", lw=1.2)
         ax_id.fill_between(id_fc6["Week_Ending_Date"], 
-                          id_fc6["Prediction_Lower_95CI"], 
-                          id_fc6["Prediction_Upper_95CI"], 
-                          color=C["green"], alpha=0.1)
+                          id_fc6["Lower_CI"], 
+                          id_fc6["Upper_CI"], 
+                          color=C["green"], alpha=0.1, label="95% CI")
 
     # Volatility Alerts
     struct_id = id_anom[id_anom["Anomaly_Flag"] == -1]
