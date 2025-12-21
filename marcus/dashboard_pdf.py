@@ -675,183 +675,191 @@ def page4(pdf, data):
 # --------------------------------------------------------------------------------------
 
 def page5(pdf, data):
-    """Anomaly Detection Methodology & Action Plan."""
+    """Anomaly Detection & Korea Deep Dive."""
     fig = plt.figure(figsize=(11.69, 8.27))
     fig.patch.set_facecolor(C["white"])
-    header(fig, "ANOMALY DETECTION METHODOLOGY & ACTION PLAN", "Dual-Layer Detection | Root Cause Analysis | Prioritized Actions", 5)
+    header(fig, "ANOMALY DETECTION & KOREA DEEP DIVE", "High-Volatility Focus | Manual Review Required | Anomaly-Based Analysis", 5)
     
     sa = data.get("structural_anomalies", pd.DataFrame())
     ta = data.get("transaction_anomalies", pd.DataFrame())
     am = data.get("arima_metrics", pd.DataFrame())
+    w = data.get("weekly", pd.DataFrame())
     
-    hw = (CW - 0.06) / 2
+    hw = (CW - 0.04) / 2
     n_struct = (sa["Anomaly_Flag"] == -1).sum() if not sa.empty else 0
     n_txn = len(ta) if not ta.empty else 0
     
-    # Methodology Comparison Table (top)
-    fig.text(0.5, 0.85, "ANOMALY DETECTION METHODOLOGY - DUAL-LAYER APPROACH", 
-            fontsize=10, fontweight="bold", ha="center", color=C["red"])
+    # ---------------------------------------------------------
+    # TOP SECTION: Condensed Anomaly Methodology
+    # ---------------------------------------------------------
+    fig.text(0.5, 0.86, "ANOMALY DETECTION METHODOLOGY", fontsize=10, fontweight="bold", ha="center", color=C["red"])
     
-    ax_method = fig.add_axes([ML, 0.72, CW, 0.11])
+    ax_method = fig.add_axes([ML, 0.75, CW, 0.08])
     ax_method.axis("off")
     
     method_data = [
-        ["LAYER 1", "Transaction-Level", "Z-Score Analysis", "|Z| > 3.5", "84,528 txns", f"{n_txn:,} flagged", "Micro anomalies"],
-        ["LAYER 2", "Structural-Level", "Isolation Forest", "5% contamination", "352 weeks", f"{n_struct} flagged", "Macro anomalies"]
+        ["Transaction-Level", "Z-Score (|Z| > 3.5)", f"{n_txn:,} flagged", "Micro anomalies"],
+        ["Structural-Level", "Isolation Forest (5%)", f"{n_struct} flagged", "Macro patterns"]
     ]
     
     method_table = ax_method.table(cellText=method_data,
-                                   colLabels=["Layer", "Scope", "Method", "Threshold", "Data Size", "Detected", "Purpose"],
+                                   colLabels=["Scope", "Method", "Detected", "Purpose"],
                                    loc="center", cellLoc="center",
-                                   colWidths=[0.10, 0.15, 0.18, 0.15, 0.12, 0.12, 0.18])
+                                   colWidths=[0.22, 0.28, 0.20, 0.30])
     method_table.auto_set_font_size(False)
-    method_table.set_fontsize(7.5)
-    method_table.scale(1.0, 1.6)
+    method_table.set_fontsize(8)
+    method_table.scale(1.0, 1.4)
     
-    for i in range(7):
+    for i in range(4):
         method_table[(0, i)].set_facecolor(C["red"])
         method_table[(0, i)].set_text_props(fontweight="bold", color="white", ha="center")
     
-    for i in [1, 2]:
-        method_table[(i, 0)].set_facecolor(C["orange"])
-        method_table[(i, 0)].set_text_props(fontweight="bold", color="white")
+    # ---------------------------------------------------------
+    # MIDDLE SECTION: KOREA DEEP DIVE
+    # ---------------------------------------------------------
+    fig.text(0.5, 0.70, "KOREA (KR) - HIGH VOLATILITY ENTITY REQUIRING MANUAL REVIEW", 
+            fontsize=11, fontweight="bold", ha="center", color=C["orange"])
     
-    # Chart: Anomaly Timeline (middle left)
-    fig.text(ML + hw/2, 0.67, "STRUCTURAL ANOMALIES TIMELINE", fontsize=9, 
-            fontweight="bold", ha="center", color=C["red"])
+    # Korea Cash Flow Timeline (left)
+    ax_kr = fig.add_axes([ML, 0.40, hw, 0.26])
     
-    ax1 = fig.add_axes([ML, 0.48, hw, 0.16])
-    if not sa.empty:
-        for c in sa["Country"].unique():
-            d = sa[sa["Country"] == c].sort_values("Week_Ending_Date")
-            ax1.plot(d["Week_Ending_Date"], d["Net_Cash_Flow"], 
-                    color=CC.get(c, C["gray"]), alpha=0.3, lw=1)
-            a = d[d["Anomaly_Flag"] == -1]
-            if not a.empty:
-                ax1.scatter(a["Week_Ending_Date"], a["Net_Cash_Flow"], 
-                           color=C["red"], s=25, zorder=5, alpha=0.8)
-        ax1.axhline(y=0, color=C["gray"], lw=1, ls="--")
-        ax1.scatter([], [], color=C["red"], s=25, label=f"Anomaly ({n_struct})")
-        ax1.set_xlabel("Date", fontsize=7)
-        ax1.set_ylabel("Cash Flow (USD)", fontsize=7)
-        ax1.legend(fontsize=7)
-        ax1.grid(True, alpha=0.3)
-        ax1.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: fmt(x, 0)))
-        ax1.tick_params(labelsize=6)
-        plt.setp(ax1.xaxis.get_majorticklabels(), rotation=25, ha="right")
+    if not w.empty and not sa.empty:
+        kr_weekly = w[w["Country_Name"] == "KR"].sort_values("Week_Ending_Date")
+        kr_anom = sa[(sa["Country"] == "KR") & (sa["Anomaly_Flag"] == -1)].sort_values("Week_Ending_Date")
+        
+        ax_kr.plot(kr_weekly["Week_Ending_Date"], kr_weekly["Net_Cash_Flow"], 
+                   "o-", color=C["blue"], lw=1.5, ms=4, alpha=0.7, label="Net Cash Flow")
+        
+        if not kr_anom.empty:
+            ax_kr.scatter(kr_anom["Week_Ending_Date"], kr_anom["Net_Cash_Flow"], 
+                         color=C["red"], s=100, marker="X", zorder=10, 
+                         label=f"Anomaly ({len(kr_anom)})")
+            
+            # Annotate the most severe anomaly
+            worst = kr_anom.loc[kr_anom["Anomaly_Score"].idxmin()]
+            ax_kr.annotate(f"Severity: {worst['Anomaly_Score']:.3f}\n${worst['Net_Cash_Flow']:,.0f}",
+                          xy=(worst["Week_Ending_Date"], worst["Net_Cash_Flow"]),
+                          xytext=(10, 30), textcoords="offset points",
+                          fontsize=7, fontweight="bold",
+                          bbox=dict(boxstyle="round,pad=0.3", fc="yellow", alpha=0.8),
+                          arrowprops=dict(arrowstyle="->", color=C["red"], lw=1.5))
+        
+        ax_kr.axhline(0, color=C["gray"], lw=1, ls="--", alpha=0.5)
+        ax_kr.set_title("Korea Cash Flow Timeline with Anomalies", fontsize=9, fontweight="bold", pad=5)
+        ax_kr.set_ylabel("Net Cash Flow (USD)", fontsize=8)
+        ax_kr.legend(loc="lower left", fontsize=7)
+        ax_kr.grid(True, alpha=0.3)
+        ax_kr.yaxis.set_major_formatter(plt.FuncFormatter(lambda x, _: fmt(x, 0)))
+        ax_kr.tick_params(labelsize=7)
+        plt.setp(ax_kr.xaxis.get_majorticklabels(), rotation=20, ha="right", fontsize=7)
     
-    # Top Anomalies Table (middle right)
-    fig.text(ML + hw + 0.06 + hw/2, 0.67, "TOP TRANSACTION ANOMALIES", fontsize=9, 
-            fontweight="bold", ha="center", color=C["orange"])
+    # Korea Stats Table (right)
+    ax_kr_stats = fig.add_axes([ML + hw + 0.04, 0.40, hw, 0.26])
+    ax_kr_stats.axis("off")
     
-    ax2 = fig.add_axes([ML + hw + 0.06, 0.48, hw, 0.16])
-    ax2.axis("off")
+    # Calculate Korea stats
+    kr_mape = am[am["Country"] == "KR"]["MAPE_percent"].values[0] if not am.empty else 0
+    kr_anom_count = len(sa[(sa["Country"] == "KR") & (sa["Anomaly_Flag"] == -1)]) if not sa.empty else 0
+    kr_cf_std = w[w["Country_Name"] == "KR"]["Net_Cash_Flow"].std() if not w.empty else 0
+    kr_cf_mean = w[w["Country_Name"] == "KR"]["Net_Cash_Flow"].mean() if not w.empty else 0
     
-    top_anom_data = [
-        ["VN20", "Bank Charge", "$8.41", "22.51", "Fee spike"],
-        ["VN20", "Bank Charge", "-$7.20", "-18.77", "Refund?"],
-        ["TH10", "Bank Charge", "-$86.34", "-13.38", "Large error"],
-        ["SS10", "AP", "-$950.52", "-12.64", "Vendor issue"],
-        ["SS10", "AP", "-$901.43", "-11.97", "Recurring AP"]
+    kr_stats = [
+        ["MAPE (Accuracy)", f"{kr_mape:.1f}%", "UNUSABLE", "Model forecasting fails"],
+        ["Struct. Anomalies", f"{kr_anom_count} weeks", "HIGH", "21% weeks anomalous"],
+        ["CF Volatility", fmt(kr_cf_std), "HIGH", "Unpredictable swings"],
+        ["Avg Weekly CF", fmt(kr_cf_mean), "NEGATIVE", "Consistent outflows"],
+        ["Recommendation", "MANUAL REVIEW", "CRITICAL", "No model forecasts"],
+        ["Action Required", "Weekly monitor", "IMMEDIATE", "Manual oversight"],
+        ["Root Cause", "Investigate", "ANALYSIS", "Find volatility drivers"],
+        ["Alternative", "Scenario plan", "STRATEGIC", "Range-based planning"]
     ]
     
-    anom_table = ax2.table(cellText=top_anom_data,
-                          colLabels=["Entity", "Category", "Amount", "Z-Score", "Investigation"],
-                          loc="center", cellLoc="center",
-                          colWidths=[0.15, 0.22, 0.18, 0.15, 0.30])
-    anom_table.auto_set_font_size(False)
-    anom_table.set_fontsize(7.5)
-    anom_table.scale(1.0, 1.6)
+    kr_table = ax_kr_stats.table(cellText=kr_stats,
+                                 colLabels=["Metric", "Value", "Status", "Interpretation"],
+                                 loc="center", cellLoc="left",
+                                 colWidths=[0.26, 0.20, 0.18, 0.36])
+    kr_table.auto_set_font_size(False)
+    kr_table.set_fontsize(7)
+    kr_table.scale(1.0, 1.3)
     
-    for i in range(5):
-        anom_table[(0, i)].set_facecolor(C["orange"])
-        anom_table[(0, i)].set_text_props(fontweight="bold", color="white", ha="center")
+    for i in range(4):
+        kr_table[(0, i)].set_facecolor(C["orange"])
+        kr_table[(0, i)].set_text_props(fontweight="bold", color="white", ha="center")
     
-    # Key Insights Table (bottom left)
-    fig.text(ML + hw/2, 0.39, "KEY INSIGHTS & DATA QUALITY", fontsize=9, 
-            fontweight="bold", ha="center", color=C["purple"])
+    # Color code status column
+    status_colors = [C["red"], C["orange"], C["orange"], C["blue"], C["red"], C["red"], C["purple"], C["green"]]
+    for ri in range(1, 9):
+        kr_table[(ri, 2)].set_text_props(color=status_colors[ri-1], fontweight="bold")
     
-    ax3 = fig.add_axes([ML, 0.06, hw, 0.32])
-    ax3.axis("off")
+    # ---------------------------------------------------------
+    # BOTTOM SECTION: Action Plan (condensed)
+    # ---------------------------------------------------------
+    fig.text(ML + hw/2, 0.30, "PRIORITIZED ACTIONS", fontsize=9, fontweight="bold", ha="center", color=C["blue"])
+    
+    ax_action = fig.add_axes([ML, 0.06, hw, 0.24])
+    ax_action.axis("off")
+    
+    action_data = [
+        ["CRITICAL", "Do NOT use KR forecasts", "Immediate"],
+        ["CRITICAL", "Deploy forecasts: MY/PH/TH", "Immediate"],
+        ["HIGH", "Weekly KR manual review", "Ongoing"],
+        ["HIGH", "Set alerts: |Z| > 5", "Week 1"],
+        ["MEDIUM", "Investigate KR volatility", "Month 1"],
+        ["MEDIUM", "Build scenario models", "Month 2"],
+        ["LOW", "Add FX regressors", "Month 3+"]
+    ]
+    
+    action_table = ax_action.table(cellText=action_data,
+                                   colLabels=["Priority", "Action", "Timeline"],
+                                   loc="center", cellLoc="left",
+                                   colWidths=[0.22, 0.50, 0.28])
+    action_table.auto_set_font_size(False)
+    action_table.set_fontsize(7.5)
+    action_table.scale(1.0, 1.3)
+    
+    for i in range(3):
+        action_table[(0, i)].set_facecolor(C["blue"])
+        action_table[(0, i)].set_text_props(fontweight="bold", color="white", ha="center")
+    
+    for ri in range(1, len(action_data) + 1):
+        priority = action_data[ri-1][0]
+        color = C["red"] if priority == "CRITICAL" else C["orange"] if priority == "HIGH" else C["gold"] if priority == "MEDIUM" else C["green"]
+        action_table[(ri, 0)].set_text_props(color=color, fontweight="bold")
+    
+    # Key Insights (bottom right)
+    fig.text(ML + hw + 0.04 + hw/2, 0.30, "KEY INSIGHTS", fontsize=9, fontweight="bold", ha="center", color=C["purple"])
+    
+    ax_insights = fig.add_axes([ML + hw + 0.04, 0.06, hw, 0.24])
+    ax_insights.axis("off")
     
     best_c = am.loc[am["MAPE_percent"].idxmin(), "Country"] if not am.empty else "N/A"
-    worst_c = am.loc[am["MAPE_percent"].idxmax(), "Country"] if not am.empty else "N/A"
     best_mape = am.loc[am["MAPE_percent"].idxmin(), "MAPE_percent"] if not am.empty else 0
-    worst_mape = am.loc[am["MAPE_percent"].idxmax(), "MAPE_percent"] if not am.empty else 0
     
     insights_data = [
-        ["Cash Flow", "All countries net negative", "Operating CF driver"],
-        ["Seasonality", "Strong weekly patterns", "Month-end cycles"],
         ["Best Model", f"{best_c} ({best_mape:.1f}%)", "High confidence"],
-        ["Worst Model", f"{worst_c} ({worst_mape:.1f}%)", "Close monitoring"],
-        ["Hybrid Boost", "15-30% improvement", "ARIMA + XGBoost"],
-        ["Data Period", "44 weeks (Jan-Nov 2025)", "84,528 transactions"],
-        ["Data Quality", "Zero missing entities", "<1% gaps"],
-        ["Risk: High", "KR, SS, TW", "Volatile patterns"],
-        ["Risk: Medium", "ID, VN", "Some volatility"],
-        ["Risk: Low", "MY, PH, TH", "Stable & predictable"]
+        ["Worst Model", f"KR ({kr_mape:.1f}%)", "Do not use"],
+        ["Risk: High", "KR, SS", "Manual review only"],
+        ["Risk: Medium", "TW, VN", "Use with caution"],
+        ["Risk: Low", "MY, PH, TH, ID", "Full automation OK"],
+        ["Data Quality", "44 weeks, 84K txns", "Complete coverage"],
+        ["Anomaly Rate", f"{n_struct}/352 weeks", f"{n_struct/3.52:.1f}% flagged"]
     ]
     
-    insights_table = ax3.table(cellText=insights_data,
-                              colLabels=["Category", "Finding", "Impact"],
-                              loc="center", cellLoc="left",
-                              colWidths=[0.25, 0.42, 0.33])
+    insights_table = ax_insights.table(cellText=insights_data,
+                                       colLabels=["Category", "Finding", "Status"],
+                                       loc="center", cellLoc="left",
+                                       colWidths=[0.28, 0.38, 0.34])
     insights_table.auto_set_font_size(False)
     insights_table.set_fontsize(7.5)
-    insights_table.scale(1.0, 1.4)
+    insights_table.scale(1.0, 1.3)
     
     for i in range(3):
         insights_table[(0, i)].set_facecolor(C["purple"])
         insights_table[(0, i)].set_text_props(fontweight="bold", color="white", ha="center")
     
-    # Action Plan Table (bottom right)
-    fig.text(ML + hw + 0.06 + hw/2, 0.39, "PRIORITIZED ACTION PLAN", fontsize=9, 
-            fontweight="bold", ha="center", color=C["blue"])
-    
-    ax4 = fig.add_axes([ML + hw + 0.06, 0.06, hw, 0.32])
-    ax4.axis("off")
-    
-    action_data = [
-        ["CRITICAL", "Week 1-2", "Investigate VN20 anomalies", "Immediate"],
-        ["CRITICAL", "Week 1-2", "Review SS10 large AP items", "Immediate"],
-        ["CRITICAL", "Week 1-2", "Set real-time alerts |Z|>5", "Immediate"],
-        ["CRITICAL", "Week 1-2", "Deploy forecasts: MY/PH/TH", "Immediate"],
-        ["HIGH", "Week 3-4", "Daily monitor: KR/TW/SS", "Short-term"],
-        ["HIGH", "Week 3-4", "Weekly forecast refresh", "Short-term"],
-        ["HIGH", "Week 3-4", "Build executive dashboard", "Short-term"],
-        ["MEDIUM", "Month 2-6", "Add FX rate regressors", "Mid-term"],
-        ["MEDIUM", "Month 2-6", "Holiday calendar integration", "Mid-term"],
-        ["LOW", "Month 6-12", "ERP integration (SAP)", "Strategic"]
-    ]
-    
-    action_table = ax4.table(cellText=action_data,
-                            colLabels=["Priority", "Timeline", "Action", "Phase"],
-                            loc="center", cellLoc="left",
-                            colWidths=[0.18, 0.18, 0.42, 0.22])
-    action_table.auto_set_font_size(False)
-    action_table.set_fontsize(7.5)
-    action_table.scale(1.0, 1.4)
-    
-    for i in range(4):
-        action_table[(0, i)].set_facecolor(C["blue"])
-        action_table[(0, i)].set_text_props(fontweight="bold", color="white", ha="center")
-    
-    # Color code priorities
-    for ri in range(1, len(action_data) + 1):
-        priority = action_data[ri-1][0]
-        if priority == "CRITICAL":
-            color = C["red"]
-        elif priority == "HIGH":
-            color = C["orange"]
-        elif priority == "MEDIUM":
-            color = C["gold"]
-        else:
-            color = C["green"]
-        action_table[(ri, 0)].set_text_props(color=color, fontweight="bold")
-    
     pdf.savefig(fig)
     plt.close(fig)
-    print("  [OK] Page 5: Anomaly Methodology & Action Plan")
+    print("  [OK] Page 5: Anomaly Detection & Korea Deep Dive")
 
 
 # --------------------------------------------------------------------------------------
